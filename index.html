@@ -5327,6 +5327,17 @@ pre, code{ white-space:pre-wrap; word-break:break-word; overflow-wrap:anywhere; 
 
   // (2) & (3) Jaring pengaman untuk error/rejection yang tidak lewat jalur click di atas.
   window.addEventListener('error', function(e){
+    // [FIX] Abaikan "Script error." generik tanpa detail apapun (tidak ada
+    // objek Error, tidak ada nama file/baris/kolom). Ini ciri khas error dari
+    // SCRIPT LINTAS-ORIGIN (CDN eksternal, ekstensi browser, atau proses
+    // native "Share/Bagikan" bawaan OS saat tab dilatarbelakangkan) -- demi
+    // keamanan, browser sengaja menyembunyikan semua detail error semacam ini
+    // dan hanya mengirim pesan generik ini. TIDAK ada informasi yang bisa
+    // ditindaklanjuti dari sini, dan ini BUKAN bug pada kode aplikasi ini --
+    // jadi tidak perlu memunculkan popup mengganggu untuk kasus ini (dulu
+    // muncul setiap pengguna menekan tombol Share/Bagikan bawaan browser).
+    const isGenericCrossOriginNoise = !e.error && e.message === 'Script error.' && !e.filename && !e.lineno && !e.colno;
+    if(isGenericCrossOriginNoise) return;
     if(e && e.error) showAppErrorPopup(e.error);
     else if(e && e.message) showAppErrorPopup(e.message);
   });
