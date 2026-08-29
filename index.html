@@ -17108,7 +17108,7 @@ function renderPatrolChecklist(){
         <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;padding:8px 0;border-bottom:1px solid var(--line);">
           <div style="font-size:15px;flex:1 1 200px;">${escapeHtml(item)}</div>
           <div class="machine-chip-row" style="margin-bottom:0;" data-kategori="${escapeHtml(kategori)}" data-idx="${i}">
-            ${PATROL_STATUS_OPTS.map(o=>`<button type="button" class="machine-chip patrol-chk-btn${cur===o.key?' active':''}" data-status="${o.key}" style="${cur===o.key?`border-color:${patrolStatusColor(o.key)};color:${patrolStatusColor(o.key)};`:''}">${o.label}</button>`).join('')}
+            ${PATROL_STATUS_OPTS.map(o=>`<button type="button" class="machine-chip patrol-chk-btn${cur===o.key?' active':''}" data-status="${o.key}" style="${cur===o.key?`background:${patrolStatusColor(o.key)};border-color:${patrolStatusColor(o.key)};color:var(--on-accent);`:''}">${o.label}</button>`).join('')}
           </div>
         </div>`;
       }).join('')}
@@ -17132,10 +17132,18 @@ function renderPatrolChecklist(){
       const kategori = row.dataset.kategori, idx = row.dataset.idx, status = btn.dataset.status;
       if(!PATROL_STATE.checklist[kategori]) PATROL_STATE.checklist[kategori] = {};
       PATROL_STATE.checklist[kategori][idx] = status;
-      $$('.patrol-chk-btn', row).forEach(b=>{ b.classList.remove('active'); b.style.borderColor=''; b.style.color=''; });
+      $$('.patrol-chk-btn', row).forEach(b=>{ b.classList.remove('active'); b.style.borderColor=''; b.style.color=''; b.style.background=''; });
       btn.classList.add('active');
+      // [FIX] Sebelumnya hanya border-color & color yang di-set ke warna status
+      // (green/amber/red/text-dim), sementara background tetap ikut default
+      // ".machine-chip.active" (merah solid) -- akibatnya teks status jadi
+      // tidak kontras (mis. merah di atas merah untuk "Abnormal"). Sekarang
+      // background ikut di-set ke warna status yang sama, dan warna teks
+      // dipakaikan var(--on-accent) -- token adaptif tema yang sama dipakai
+      // semua tombol aktif lain di aplikasi -- supaya selalu kontras & konsisten.
+      btn.style.background = patrolStatusColor(status);
       btn.style.borderColor = patrolStatusColor(status);
-      btn.style.color = patrolStatusColor(status);
+      btn.style.color = 'var(--on-accent)';
     });
   });
 }
