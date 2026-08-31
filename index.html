@@ -15277,10 +15277,20 @@ function buildMaterialFieldsFromRows(){
   syncSparepartRowsFromDom();
   // Seluruh field sparepart bersifat opsional. Simpan setiap nilai yang
   // memang diisi tanpa memaksa kelengkapan field lain pada baris yang sama.
-  const rows = SPAREPART_ROWS.filter(r=>r.nama.trim() || r.sap.trim() || String(r.jumlah).trim());
+  const rows = SPAREPART_ROWS
+    .filter(r=>r.nama.trim() || r.sap.trim() || String(r.jumlah).trim())
+    .map(r=>{
+      const master = r.sap.trim() ? findSparepartLokasiBySap(r.sap.trim()) : null;
+      return { ...r, lokasiSparepart: master ? String(master.lokasiGudang||'').trim() : '' };
+    });
   const namaMaterial = rows.map(r=> r.jumlah ? `${r.nama.trim()} (${r.jumlah} pcs)` : r.nama.trim()).filter(Boolean).join('; ');
   const materialNumberSAP = rows.map(r=> r.sap.trim()).filter(Boolean).join('; ');
-  return { namaMaterial, materialNumberSAP, detail: rows };
+  // Backend lama mewajibkan kolom Lokasi Sparepart. Nilai fallback ini
+  // menjaga kompatibilitas tanpa menjadikan input sparepart wajib bagi user.
+  const lokasiSparepart = rows.length
+    ? rows.map(r=>r.lokasiSparepart || 'Belum terdaftar').join('; ')
+    : 'Tidak menggunakan sparepart';
+  return { namaMaterial, materialNumberSAP, lokasiSparepart, detail: rows };
 }
 
 /* ---------------- FILE UPLOAD (FORM) ---------------- */
@@ -15510,6 +15520,7 @@ $('#form-entry').addEventListener('submit', async (ev)=>{
     const sparepartFields = buildMaterialFieldsFromRows();
     entry.namaMaterial = sparepartFields.namaMaterial;
     entry.materialNumberSAP = sparepartFields.materialNumberSAP;
+    entry.lokasiSparepart = sparepartFields.lokasiSparepart;
     entry.sparepartDetail = sparepartFields.detail;
     const now = new Date();
     entry.waktu = now.toTimeString().slice(0,5);
