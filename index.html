@@ -15044,19 +15044,19 @@ function renderSparepartRows(){
   if(!holder) return;
   holder.innerHTML = SPAREPART_ROWS.map((r,i)=>`
     <div class="sparepart-row" data-id="${r.id}">
-      <div class="field"><label>${i===0?'Nama Material yang Digunakan (opsional)':'Nama Material'}</label>
+      <div class="field"><label>${i===0?'Nama Material yang Digunakan (opsional)':'Nama Material (opsional)'}</label>
         <div class="sp-suggest-wrap">
           <input type="text" class="sp-nama" autocomplete="off" placeholder="Ketik nama material untuk melihat suggestion" value="${escapeHtml(r.nama)}">
           <div class="sp-suggest-box sp-nama-suggest"></div>
         </div>
       </div>
-      <div class="field"><label><span>Material Number SAP</span><span class="sp-lokasi-hint" style="font-size:11px;font-weight:400;color:var(--amber);">${(()=>{ const l=findSparepartLokasiBySap(r.sap); return l ? `<i class="ph-bold ph-map-pin"></i> Lokasi: ${escapeHtml(l.lokasiGudang||'-')}` : ''; })()}</span></label>
+      <div class="field"><label><span>Material Number SAP (opsional)</span><span class="sp-lokasi-hint" style="font-size:11px;font-weight:400;color:var(--amber);">${(()=>{ const l=findSparepartLokasiBySap(r.sap); return l ? `<i class="ph-bold ph-map-pin"></i> Lokasi: ${escapeHtml(l.lokasiGudang||'-')}` : ''; })()}</span></label>
         <div class="sp-suggest-wrap">
           <input type="text" class="sp-sap" autocomplete="off" placeholder="Ketik nomor material untuk melihat suggestion" value="${escapeHtml(r.sap)}">
           <div class="sp-suggest-box sp-sap-suggest"></div>
         </div>
       </div>
-      <div class="field"><label>Jumlah</label>
+      <div class="field"><label>Jumlah (opsional)</label>
         <input type="number" class="sp-jumlah" min="1" step="1" inputmode="numeric" placeholder="Masukkan jumlah pemakaian jika menggunakan sparepart" value="${escapeHtml(r.jumlah)}">
       </div>
       ${SPAREPART_ROWS.length>1 ? `<button type="button" class="sparepart-row-remove" data-id="${r.id}"><i class="ph-bold ph-trash"></i></button>` : `<span></span>`}
@@ -15275,14 +15275,9 @@ async function groqAutoFixEntryFields(entry){
 
 function buildMaterialFieldsFromRows(){
   syncSparepartRowsFromDom();
+  // Seluruh field sparepart bersifat opsional. Simpan setiap nilai yang
+  // memang diisi tanpa memaksa kelengkapan field lain pada baris yang sama.
   const rows = SPAREPART_ROWS.filter(r=>r.nama.trim() || r.sap.trim() || String(r.jumlah).trim());
-  rows.forEach((r, index)=>{
-    if(!r.nama.trim() && !r.sap.trim()) throw new Error(`Sparepart baris ${index+1}: isi Nama Material atau Material Number SAP.`);
-    if(r.sap.trim() && !r.nama.trim()) throw new Error(`Sparepart baris ${index+1}: nomor material tidak ditemukan di database. Pilih nomor dari suggestion atau isi Nama Material.`);
-    if(String(r.jumlah).trim() === '') throw new Error(`Sparepart baris ${index+1}: Jumlah wajib diisi jika menggunakan sparepart.`);
-    const qty = Number(r.jumlah);
-    if(!Number.isInteger(qty) || qty <= 0) throw new Error(`Sparepart baris ${index+1}: Jumlah wajib berupa angka bulat lebih dari 0.`);
-  });
   const namaMaterial = rows.map(r=> r.jumlah ? `${r.nama.trim()} (${r.jumlah} pcs)` : r.nama.trim()).filter(Boolean).join('; ');
   const materialNumberSAP = rows.map(r=> r.sap.trim()).filter(Boolean).join('; ');
   return { namaMaterial, materialNumberSAP, detail: rows };
