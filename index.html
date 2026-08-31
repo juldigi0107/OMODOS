@@ -6504,7 +6504,13 @@ async function apiGet(action, params={}){
   return json.data;
 }
 async function apiPost(payload){
-  if(!WEB_APP_URL){ throw new Error('NO_URL'); }
+  // Tetap antrekan operasi tulis ketika URL belum tersedia. Sebelumnya
+  // fungsi berhenti sebelum masuk blok try/catch sehingga data yang dibuat
+  // saat koneksi belum dikonfigurasi tidak pernah ikut sinkron otomatis.
+  if(!WEB_APP_URL){
+    if(payload.action !== 'login') queueForSync_(payload);
+    throw new Error('NO_URL');
+  }
   if(payload.action !== 'login' && !SESSION_TOKEN){ throw new Error('AUTH_REQUIRED'); }
   const requestToken = (SETTING_AUTH_OK && SETTING_SESSION_TOKEN) ? SETTING_SESSION_TOKEN : SESSION_TOKEN;
   const securedPayload = payload.action === 'login' ? payload : {...payload, sessionToken:requestToken};
@@ -6527,7 +6533,8 @@ async function apiPost(payload){
     // disinkron otomatis nanti begitu internet kembali. Kegagalan dari
     // server (json.ok === false, misal validasi) TIDAK diantre karena
     // request sudah benar-benar sampai & ditolak, bukan soal koneksi.
-    const isNetworkErr = err instanceof TypeError || /Failed to fetch|NetworkError|Load failed/i.test(err.message || '');
+    const isNetworkErr = err instanceof TypeError ||
+      /Failed to fetch|NetworkError|Load failed|Backend timeout|AbortError|aborted/i.test(err.message || '');
     if(isNetworkErr){
       queueForSync_(securedPayload);
       setAppOnlineStatus(false);
@@ -6667,6 +6674,13 @@ function queueForSync_(payload){
   const q = loadSyncQueue_();
   const queuedPayload = {...payload};
   delete queuedPayload.sessionToken;
+  // Cegah item identik menumpuk jika pengguna menekan simpan lagi setelah
+  // timeout. Payload berbeda tetap dipertahankan sebagai operasi terpisah.
+  const signature = JSON.stringify(queuedPayload);
+  if(q.some(item => JSON.stringify(item.payload) === signature)){
+    renderOfflineBanner();
+    return;
+  }
   q.push({ id: 'sync_'+Date.now()+'_'+Math.random().toString(36).slice(2), payload:queuedPayload, ts: Date.now() });
   saveSyncQueue_(q);
 }
@@ -6679,7 +6693,8 @@ async function flushSyncQueue_(){
   for(const item of q){
     try{
       if(!SESSION_TOKEN) throw new Error('AUTH_REQUIRED');
-      const res = await fetch(WEB_APP_URL, { method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify({...item.payload, sessionToken:SESSION_TOKEN}) });
+      const requestToken = (SETTING_AUTH_OK && SETTING_SESSION_TOKEN) ? SETTING_SESSION_TOKEN : SESSION_TOKEN;
+      const res = await fetchWithTimeout_(WEB_APP_URL, { method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify({...item.payload, sessionToken:requestToken}) }, 30000);
       const json = await parseApiResponse_(res);
       if(!json.ok) throw new Error(json.error || 'gagal');
     }catch(e){
