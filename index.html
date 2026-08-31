@@ -15514,6 +15514,13 @@ $('#form-entry').addEventListener('submit', async (ev)=>{
     if(!entry.kodeMesin || !entry.namaMesin){
       throw new Error('Kode Mesin dan Nama Mesin wajib diisi (pilih dari daftar atau isi manual jika "Lainnya").');
     }
+    // Lokasi/Area bukan field manual pada form. Ambil otomatis dari Master
+    // Mesin agar kontrak data dengan backend tetap lengkap.
+    const selectedMachine = MACHINES.find(m=>
+      String(m['Kode Mesin']||'').trim() === entry.kodeMesin ||
+      String(m['Nama Mesin']||'').trim() === entry.namaMesin
+    );
+    entry.lokasi = selectedMachine ? String(selectedMachine['Lokasi/Area']||'').trim() : '';
     // Sparepart opsional — tidak ada validasi wajib isi sparepart di sini
     // maupun di langkah-langkah wizard sebelumnya (baris dengan qty
     // kosong/0 otomatis dianggap tidak dipakai dan dilewati).
