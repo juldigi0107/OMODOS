@@ -3074,8 +3074,8 @@ async function syncQueueEnterprise(){
 }
 
 // Auto sync every 30s and on online event
-setInterval(()=>{ if(navigator.onLine) syncQueueEnterprise(); }, 30000);
-window.addEventListener('online', ()=>{ setAppOnlineStatus(true); syncQueueEnterprise(); });
+setInterval(()=>{ if(navigator.onLine && typeof SESSION_TOKEN!=='undefined' && SESSION_TOKEN) syncQueueEnterprise(); }, 30000);
+window.addEventListener('online', ()=>{ setAppOnlineStatus(true); if(typeof SESSION_TOKEN!=='undefined' && SESSION_TOKEN) syncQueueEnterprise(); });
 window.addEventListener('offline', ()=>{ setAppOnlineStatus(false); });
 
 // --- SOFT SKILL MIGRATION (localStorage -> backend) ---
@@ -7277,8 +7277,8 @@ window.addEventListener('online', ()=> setAppOnlineStatus(true));
 window.addEventListener('offline', ()=> setAppOnlineStatus(false));
 // Polling berkala jaga-jaga: browser kadang telat memicu event 'online', atau
 // koneksi "menyala" tapi sebenarnya tidak bisa menjangkau Web App-nya.
-setInterval(()=>{ if(navigator.onLine) flushSyncQueue_(); }, 30000);
-renderOfflineBanner();
+setInterval(()=>{ if(navigator.onLine && typeof SESSION_TOKEN!=='undefined' && SESSION_TOKEN) flushSyncQueue_(); }, 30000);
+if(typeof CURRENT_USER!=='undefined' && CURRENT_USER) renderOfflineBanner();
 
 /* ---------------- CONFIG BANNER ---------------- */
 function renderConfigBanner(){
@@ -18993,6 +18993,11 @@ async function exportProjectXlsx(id){
       gate.style.opacity = '0';
       setTimeout(()=>{ gate.style.display = 'none'; }, 380);
       appRoot.classList.add('unlocked');
+      // Jalankan pekerjaan UI yang sengaja ditunda selama login.
+      try{ loadGrReports(); }catch(e){}
+      try{ if(typeof renderOfflineBanner==='function') renderOfflineBanner(); }catch(e){}
+      try{ if(typeof initAssessmentWizards==='function') initAssessmentWizards(); }catch(e){}
+      try{ if(typeof renderHomeGreeting==='function') renderHomeGreeting(); }catch(e){}
       // Setelah login berhasil, selalu masuk ke halaman Home (dashboard) —
       // bukan Input Logbook — dengan status mesin, sapaan, tanggal,
       // perhatian kritis & toolbar sudah dirender.
@@ -19632,8 +19637,13 @@ document.addEventListener('dragstart', (ev)=>{
   $('input[name="tanggal"]').value = now.toISOString().slice(0,10);
 
   renderConfigBanner();
-  loadGrReports();
-  $('#cnt-report-hub') && ($('#cnt-report-hub').textContent = GENERAL_REPORTS.length);
+  // Boot ringan saat masih di login. Pembacaan/render data modul ditunda
+  // sampai ada sesi agar Safari mobile tidak dibebani pekerjaan aplikasi
+  // penuh sebelum field username/password sempat menerima fokus.
+  if(CURRENT_USER){
+    loadGrReports();
+    $('#cnt-report-hub') && ($('#cnt-report-hub').textContent = GENERAL_REPORTS.length);
+  }
   if(WEB_APP_URL && CURRENT_USER && SESSION_TOKEN){
     INITIAL_LOAD_PROMISE = loadAll();
     INITIAL_LOAD_PROMISE.then(()=> restoreFormEntryDraft());
@@ -19647,7 +19657,7 @@ document.addEventListener('dragstart', (ev)=>{
       }
     });
   }
-  else { restoreFormEntryDraft(); }
+  else if(CURRENT_USER) { restoreFormEntryDraft(); }
 })();
 
 /* Fullscreen tidak boleh dipicu dari klik global maupun submit login.
@@ -22807,6 +22817,7 @@ if(btnPiSsSave) btnPiSsSave.addEventListener('click', ()=>{
 
   document.addEventListener('DOMContentLoaded', function(){
     setTimeout(function(){
+      if(typeof CURRENT_USER==='undefined' || !CURRENT_USER) return;
       const v = window.PREVIOUS_ACTIVE_VIEW || 'input';
       refreshForView(v);
     }, 300);
@@ -23260,6 +23271,7 @@ function renderHomeGreeting(){
   }catch(e){ elD.textContent = now.toDateString(); }
 }
 document.addEventListener('DOMContentLoaded', function(){
+  if(typeof CURRENT_USER==='undefined' || !CURRENT_USER) return;
   renderHomeGreeting();
   renderHomeSmartResume();
 });
@@ -23300,6 +23312,7 @@ if(typeof window.goToView === 'function' && !window.goToView.__lbTabsWrapped){
   window.goToView = wrappedGoToView;
 }
 document.addEventListener('DOMContentLoaded', ()=>{
+  if(typeof CURRENT_USER==='undefined' || !CURRENT_USER) return;
   renderLbTabbars('input');
   document.querySelectorAll('#insights-hub-grid [data-view]').forEach(btn=>{
     btn.addEventListener('click', ()=>{ if(typeof goToView==='function') goToView(btn.dataset.view); });
@@ -23374,6 +23387,7 @@ function collapseInactiveNavGroups(){
   });
 }
 document.addEventListener('DOMContentLoaded', function(){
+  if(typeof CURRENT_USER==='undefined' || !CURRENT_USER) return;
   setTimeout(collapseInactiveNavGroups, 200);
 });
 // Re-terapkan setiap kali menu berpindah, dengan membungkus goToView
@@ -24103,9 +24117,11 @@ function initAssessmentWizards(){
 }
 
 if(document.readyState === 'loading'){
-  document.addEventListener('DOMContentLoaded', initAssessmentWizards);
+  document.addEventListener('DOMContentLoaded', ()=>{
+    if(typeof CURRENT_USER!=='undefined' && CURRENT_USER) initAssessmentWizards();
+  });
 } else {
-  initAssessmentWizards();
+  if(typeof CURRENT_USER!=='undefined' && CURRENT_USER) initAssessmentWizards();
 }
 
 })();
@@ -25954,6 +25970,7 @@ if(typeof window.goToView === 'function' && !window.goToView.__tabsWrapped){
 
   // Prevent API key exposure check
   setTimeout(()=>{
+    if(typeof CURRENT_USER==='undefined' || !CURRENT_USER) return;
     const htmlSrc = document.documentElement.innerHTML;
     const suspicious = /(sk-|gsk_|AIza|groq|gemini).*key/i.test(htmlSrc);
     if(suspicious){
@@ -26279,6 +26296,7 @@ async function loadTransactionLog(){
 <script>
 (function(){
   setInterval(()=>{
+    if(typeof CURRENT_USER==='undefined' || !CURRENT_USER) return;
     const el=document.getElementById('footer-sync');
     if(!el) return;
     const h = window.OMODOS_ENTERPRISE?.getHealth();
