@@ -2131,7 +2131,7 @@ body{
 }
 
 #login-gate{
-  position:fixed;inset:0;z-index:1000;
+  position:fixed;inset:0;z-index:2147483000;
   display:flex;align-items:center;justify-content:center;
   background:
     radial-gradient(circle at 20% 15%, color-mix(in srgb, var(--red) 10%, transparent), transparent 45%),
@@ -2141,6 +2141,9 @@ body{
     var(--bg);
   background-size:auto,auto,38px 38px,38px 38px;
   padding:20px;
+  pointer-events:auto;touch-action:manipulation;
+  overflow-x:hidden;overflow-y:auto;
+  -webkit-overflow-scrolling:touch;
 }
 #login-gate::before{
   content:"";position:absolute;inset:0;pointer-events:none;
@@ -2160,6 +2163,20 @@ body{
   box-shadow:0 0 0 1px color-mix(in srgb, var(--red) 15%, transparent) inset, 0 24px 70px rgba(0,0,0,.6), 0 0 50px -8px var(--red-glow);
   animation:modalIn 320ms cubic-bezier(.4,0,.2,1), holoBorderPulse 4s ease-in-out infinite;
   text-align:center;
+  z-index:1;pointer-events:auto;
+}
+.login-box form,.login-box .field,.login-box input,.login-box button{
+  position:relative;z-index:2;pointer-events:auto;
+}
+.login-box input{
+  -webkit-user-select:text;user-select:text;
+  touch-action:manipulation;
+  opacity:1;
+}
+@media(max-width:600px){
+  #login-gate{align-items:flex-start;padding:calc(18px + env(safe-area-inset-top)) 14px calc(46px + env(safe-area-inset-bottom));}
+  .login-box{margin:auto 0;padding:28px 24px 24px;}
+  .login-box input{font-size:16px;} /* mencegah auto-zoom dan kehilangan fokus di iOS */
 }
 @keyframes holoBorderPulse{
   0%,100%{box-shadow:0 0 0 1px color-mix(in srgb, var(--red) 15%, transparent) inset, 0 24px 70px rgba(0,0,0,.6), 0 0 40px -8px var(--red-glow);}
@@ -2969,19 +2986,31 @@ function updateSyncIndicator(){
 }
 
 function queueForSyncEnterprise(payload){
-  if(!payload) return;
+  if(!payload) return false;
   // SECURITY: never queue secrets
   if(payload.password || payload.newPassword || /apiKey|secret/i.test(JSON.stringify(payload))){
     console.warn('[QUEUE] Blocked secret payload from queue');
-    return;
+    return false;
+  }
+  // Jangan menyimpan session token ke localStorage bersama antrean offline.
+  // Token aktif akan diinjeksi ulang oleh apiPostHardened saat sinkronisasi.
+  const queuePayload = {...payload};
+  delete queuePayload.sessionToken;
+  // Payload file besar mudah melampaui quota localStorage dan memberi ilusi
+  // bahwa data sudah masuk antrean padahal gagal disimpan. Biarkan caller
+  // menampilkan error jaringan supaya pengguna dapat mencoba ulang.
+  const serialized = JSON.stringify(queuePayload);
+  if(serialized.length > 1500000){
+    console.warn('[QUEUE] Payload terlalu besar untuk antrean offline');
+    return false;
   }
   const q = getQueue();
-  const txId = payload.transactionId || genTransactionId();
-  payload.transactionId = txId;
+  const txId = queuePayload.transactionId || genTransactionId();
+  queuePayload.transactionId = txId;
   const item = {
     id: txId,
     action: payload.action||'unknown',
-    payload: payload,
+    payload: queuePayload,
     status: 'pending',
     retryCount: 0,
     lastError: '',
@@ -2993,6 +3022,7 @@ function queueForSyncEnterprise(payload){
   saveQueue(q);
   // try sync immediately if online
   if(navigator.onLine) setTimeout(syncQueueEnterprise, 1000);
+  return true;
 }
 
 async function syncQueueEnterprise(){
@@ -3111,7 +3141,7 @@ async function parseApiResponseEnterprise(res){
   }
 }
 
-async function apiGet(action, params={}){
+async function apiGetLegacyEnterprise_(action, params={}){
   // Enterprise hardened wrapper - uses apiGetHardened if available
   if(typeof apiGetHardened==='function'){
     return apiGetHardened(action, params);
@@ -3145,7 +3175,7 @@ async function apiGetHardened(action, params={}){
   return json.data;
 }
 
-async function apiPost(payload){
+async function apiPostLegacyEnterprise_(payload){
   // Enterprise hardened wrapper
   if(typeof apiPostHardened==='function'){
     return apiPostHardened(payload, { skipQueue:false });
@@ -3393,14 +3423,14 @@ const PWA_MANIFEST = {
     <div class="omodos-tagline">OUR <b class="c-blue">MOTTO</b>. OUR <b class="c-pink">DUTY</b>. OUR <b class="c-amber">STRATEGY</b>.</div>
     <div class="omodos-divider"><span></span><i></i><span></span></div>
     <div class="sub-title">Smart Maintenance Reporting Platform - Packaging Offset</div>
-    <form id="form-login" autocomplete="off">
+    <form id="form-login" autocomplete="on">
       <div class="field">
         <label>Username</label>
-        <input type="text" id="login-username" name="username" placeholder="Masukkan username" required>
+        <input type="text" id="login-username" name="username" placeholder="Masukkan username" autocomplete="username" autocapitalize="none" spellcheck="false" enterkeyhint="next" required>
       </div>
       <div class="field">
         <label>Password</label>
-        <input type="password" id="login-password" name="password" placeholder="Masukkan password" required>
+        <input type="password" id="login-password" name="password" placeholder="Masukkan password" autocomplete="current-password" enterkeyhint="go" required>
       </div>
       <button type="submit" class="btn btn-primary" id="btn-login-submit">
         <i class="ph-bold ph-lock-key"></i> Masuk
@@ -7005,6 +7035,7 @@ async function parseApiResponse_(res){
   }
 }
 async function apiGet(action, params={}){
+  if(typeof apiGetHardened === 'function') return apiGetHardened(action, params);
   if(!WEB_APP_URL){ throw new Error('NO_URL'); }
   if(!SESSION_TOKEN){ throw new Error('AUTH_REQUIRED'); }
   const requestToken = (SETTING_AUTH_OK && SETTING_SESSION_TOKEN) ? SETTING_SESSION_TOKEN : SESSION_TOKEN;
@@ -7018,6 +7049,7 @@ async function apiGet(action, params={}){
   return json.data;
 }
 async function apiPost(payload){
+  if(typeof apiPostHardened === 'function') return apiPostHardened(payload, { skipQueue:false });
   if(!WEB_APP_URL){ throw new Error('NO_URL'); }
   if(payload.action !== 'login' && !SESSION_TOKEN){ throw new Error('AUTH_REQUIRED'); }
   const requestToken = (SETTING_AUTH_OK && SETTING_SESSION_TOKEN) ? SETTING_SESSION_TOKEN : SESSION_TOKEN;
@@ -19618,31 +19650,11 @@ document.addEventListener('dragstart', (ev)=>{
   else { restoreFormEntryDraft(); }
 })();
 
-function aktifkanFullscreen() {
-  const element = document.documentElement; // Mengambil seluruh halaman HTML
-
-  if (element.requestFullscreen) {
-    element.requestFullscreen();
-  } else if (element.webkitRequestFullscreen) { /* Safari / iOS */
-    element.webkitRequestFullscreen();
-  } else if (element.msRequestFullscreen) { /* IE11 */
-    element.msRequestFullscreen();
-  }
-}
-
-// Opsi A: Memicu fullscreen ketika tombol login ditekan (Direkomendasikan)
-// Silakan sesuaikan ID/Class form login Anda. Contoh:
-const loginForm = document.querySelector('.login-box form') || document.querySelector('form');
-if (loginForm) {
-  loginForm.addEventListener('submit', () => {
-    aktifkanFullscreen();
-  });
-}
-
-// Opsi B: Memicu fullscreen secara halus saat pengguna mengetuk bagian layar mana saja untuk pertama kalinya
-document.addEventListener('click', () => {
-  aktifkanFullscreen();
-}, { once: true }); // 'once: true' memastikan ini hanya berjalan satu kali saat klik pertama
+/* Fullscreen tidak boleh dipicu dari klik global maupun submit login.
+   Di Safari/iOS permintaan fullscreen pada tap pertama dapat mengambil alih
+   user gesture, membatalkan fokus input/keyboard, atau menghasilkan promise
+   rejection. Jika kelak diperlukan, fullscreen harus disediakan lewat tombol
+   khusus setelah pengguna berhasil login. */
 
 /* =========================================================
    AI MAINTENANCE COPILOT
@@ -26250,7 +26262,7 @@ async function loadTransactionLog(){
 </script>
 
 
-<div style="position:fixed;bottom:0;left:0;right:0;height:28px;background:var(--panel-glass-strong);border-top:1px solid var(--line-soft);display:flex;align-items:center;justify-content:space-between;padding:0 12px;font-size:10px;color:var(--text-muted);z-index:9997;backdrop-filter:blur(12px);">
+<div id="enterprise-footer" style="position:fixed;bottom:0;left:0;right:0;height:28px;background:var(--panel-glass-strong);border-top:1px solid var(--line-soft);display:flex;align-items:center;justify-content:space-between;padding:0 12px;font-size:10px;color:var(--text-muted);z-index:9997;backdrop-filter:blur(12px);pointer-events:none;">
   <div style="display:flex;gap:12px;align-items:center;">
     <span style="font-family:var(--font-display);font-weight:700;letter-spacing:0.05em;">OMODOS v2.0 PUBLIC</span>
     <span style="opacity:0.5;">|</span>
