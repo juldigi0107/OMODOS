@@ -6,6 +6,87 @@
 <title>OMODOS - Smart Maintenance Reporting Platform | Packaging Offset || Created by IDJ</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='50' r='38' fill='none' stroke='%23111111' stroke-width='16'/%3E%3Cpath d='M50 88 A38 38 0 0 1 21.7 74.8' fill='none' stroke='%2300AEEF' stroke-width='16'/%3E%3Cpath d='M21.7 74.8 A38 38 0 0 1 50 88' fill='none' stroke='%23EC008C' stroke-width='16'/%3E%3Cpath d='M50 88 A38 38 0 0 0 78.3 74.8' fill='none' stroke='%23FFC20E' stroke-width='16'/%3E%3C/svg%3E">
 <script>(function(){ try{ var t = localStorage.getItem('app_theme') || 'omodos'; document.documentElement.setAttribute('data-theme', t); }catch(e){} try{ var s = localStorage.getItem('app_style') || 'klasik'; if(s !== 'klasik'){ document.documentElement.setAttribute('data-style', s); } }catch(e){} })();
+/* =====================================================================
+   AUTHENTICATION-FIRST BOOT BARRIER
+   ---------------------------------------------------------------------
+   OMODOS adalah single-file application besar. Tidak satu pun initializer
+   modul, pemindaian DOM, atau interval background boleh hidup selagi layar
+   login aktif. Barrier ini dipasang sebelum script aplikasi mendaftarkan
+   listener apa pun, sehingga login tetap ringan dan responsif di desktop
+   maupun mobile. Semua pekerjaan yang ditahan dilepas bertahap hanya setelah
+   sesi valid, agar main thread tidak kembali macet dalam satu frame.
+   ===================================================================== */
+(function installAuthBootBarrier(){
+  const nativeAddEventListener = document.addEventListener.bind(document);
+  const nativeSetInterval = window.setInterval.bind(window);
+  const deferredDomReady = [];
+  const deferredIntervals = [];
+  let domReady = document.readyState !== 'loading';
+  let released = false;
+
+  document.addEventListener = function(type, listener, options){
+    if(type === 'DOMContentLoaded' && !released){
+      deferredDomReady.push({listener, options});
+      return;
+    }
+    return nativeAddEventListener(type, listener, options);
+  };
+
+  window.setInterval = function(callback, delay){
+    const args = Array.prototype.slice.call(arguments, 2);
+    if(!released){
+      const record = {callback, delay:Math.max(Number(delay)||0, 1000), args, id:deferredIntervals.length + 1, cancelled:false};
+      deferredIntervals.push(record);
+      return -record.id;
+    }
+    return nativeSetInterval(callback, delay, ...args);
+  };
+
+  const nativeClearInterval = window.clearInterval.bind(window);
+  window.clearInterval = function(id){
+    if(typeof id === 'number' && id < 0){
+      const record = deferredIntervals[-id - 1];
+      if(record) record.cancelled = true;
+      return;
+    }
+    return nativeClearInterval(id);
+  };
+
+  function invokeListener_(listener){
+    try{
+      const ev = new Event('DOMContentLoaded');
+      if(typeof listener === 'function') listener.call(document, ev);
+      else if(listener && typeof listener.handleEvent === 'function') listener.handleEvent(ev);
+    }catch(err){ console.error('[Deferred boot]', err); }
+  }
+
+  function drain_(){
+    if(!released || !domReady) return;
+    const listeners = deferredDomReady.splice(0);
+    let i = 0;
+    function nextBatch(){
+      const end = Math.min(i + 2, listeners.length);
+      while(i < end) invokeListener_(listeners[i++].listener);
+      if(i < listeners.length) setTimeout(nextBatch, 32);
+      else{
+        deferredIntervals.splice(0).forEach(record=>{
+          if(!record.cancelled) nativeSetInterval(record.callback, record.delay, ...record.args);
+        });
+      }
+    }
+    setTimeout(nextBatch, 0);
+  }
+
+  nativeAddEventListener('DOMContentLoaded', function(){ domReady = true; drain_(); }, {once:true});
+  window.__omodosReleaseDeferredBoot = function(){
+    if(released) return;
+    released = true;
+    document.addEventListener = nativeAddEventListener;
+    window.setInterval = nativeSetInterval;
+    window.clearInterval = nativeClearInterval;
+    drain_();
+  };
+})();
 document.addEventListener('click', async (e)=>{
   if(e.target.closest('#btn-pi-hs-add-row')){
     renderPiHardSkillEditItems([...PI_HS_EDIT_ITEMS, piBlankHardSkillItem()]);
@@ -7106,6 +7187,7 @@ async function apiPost(payload){
   applyRbacToUi();
   if(gate) gate.style.display = 'none';
   if(appRoot) appRoot.classList.add('unlocked');
+  if(typeof window.__omodosReleaseDeferredBoot === 'function') window.__omodosReleaseDeferredBoot();
   // [FIX] switchToView('dashboard') dipanggil lewat setTimeout(...,0), BUKAN
   // langsung sinkron di sini. Alasan: IIFE ini jalan di TENGAH proses parsing
   // script (jauh sebelum baris const LS_MBD_KEY/LS_CR_KEY/LS_ENG_KEY di bawah
@@ -18993,6 +19075,7 @@ async function exportProjectXlsx(id){
       gate.style.opacity = '0';
       setTimeout(()=>{ gate.style.display = 'none'; }, 380);
       appRoot.classList.add('unlocked');
+      if(typeof window.__omodosReleaseDeferredBoot === 'function') window.__omodosReleaseDeferredBoot();
       // Jalankan pekerjaan UI yang sengaja ditunda selama login.
       try{ loadGrReports(); }catch(e){}
       try{ if(typeof renderOfflineBanner==='function') renderOfflineBanner(); }catch(e){}
