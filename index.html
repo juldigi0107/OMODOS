@@ -3060,13 +3060,13 @@ pre, code{ white-space:pre-wrap; word-break:break-word; overflow-wrap:anywhere; 
               <select name="namaPelapor" id="select-namaPelapor" required>
                 <option value="">Pilih personil...</option>
               </select>
-              <div class="sub" style="margin-top:4px;">Teknisi utama yang bertanggung jawab. Jika pekerjaan tim, tambah personil lain di bawah.</div>
+              <div class="sub" style="margin-top:4px;">Teknisi utama. Jika tim, tambah personil lain di bawah (opsional).</div>
             </div>
             <div class="field"><label>Nomor Notifikasi Pekerjaan</label><input type="text" name="nomorNotifikasi" placeholder="Contoh: 10023456" required></div>
           </div>
           <div class="field" id="field-additional-personil" style="margin-top:10px;">
-            <label>Personil Tambahan (Opsional - tidak wajib diisi)</label>
-            <div class="sub" style="margin-bottom:8px;">Jika pekerjaan dikerjakan lebih dari 1 orang, klik tombol di bawah untuk menambah personil lain. Bisa kosong jika hanya 1 orang.</div>
+            <label>Personil Tambahan (Opsional - tidak wajib)</label>
+            <div class="sub" style="margin-bottom:8px;">Klik tombol di bawah jika pekerjaan dikerjakan lebih dari 1 orang. Bisa kosong.</div>
             <div id="additional-personil-container" style="display:flex; flex-direction:column; gap:8px;"></div>
             <button type="button" class="btn btn-ghost btn-sm" id="btn-add-personil-tambahan" style="margin-top:8px;"><i class="ph-bold ph-users-three"></i> Tambah Personil Lain</button>
           </div>
@@ -5823,11 +5823,11 @@ function showSettingLoginModal(onSuccess){
     const originalLabel = submitBtn.innerHTML;
     submitBtn.innerHTML = '<i class="ph-bold ph-circle-notch ph-spin"></i> Memeriksa...';
     try{
-      const res = await fetch(WEB_APP_URL, {
+      const res = await fetchWithTimeout_(WEB_APP_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify({ action: 'login', username: u, password: p })
-      });
+      }, 30000);
       const json = await parseApiResponse_(res);
       if(!json.ok || !json.user){
         errEl.textContent = json.error || 'Username atau password salah.';
@@ -6482,7 +6482,6 @@ function restoreFormEntryDraft(){
       SPAREPART_ROW_ID = Math.max(0, ...SPAREPART_ROWS.map(r=>r.id||0));
       renderSparepartRows();
     }
-
     if(Array.isArray(draft.additionalPersonil) && typeof ADDITIONAL_PERSONIL_ROWS !== 'undefined'){
       ADDITIONAL_PERSONIL_ROWS = draft.additionalPersonil;
       if(ADDITIONAL_PERSONIL_ROWS.length){
@@ -6490,7 +6489,6 @@ function restoreFormEntryDraft(){
       }
       renderAdditionalPersonil();
     }
-
     if(typeof computeEstimasi === 'function') computeEstimasi();
   }finally{
     FORM_ENTRY_DRAFT_RESTORING = false;
@@ -7223,35 +7221,22 @@ async function loadAll(){
    Nama pelapor bisa berisi lebih dari satu nama yang dipisahkan
    garis miring "/", misal: "Dede Jumadi/Dwi Sugeng Kurniawan/Nur Wahyudi".
    Fungsi ini memecahnya menjadi array nama individu yang sudah di-trim. */
-function splitPelaporNames(str){
-  // PATCHED: support semuaPersonil dan personil tambahan yang dipisah koma
-  return String(str||'').split(/[,;]+/).map(s=>s.trim()).filter(Boolean);
-}
-function getAllPersonilFromEntry(e){
-  // Gabungkan Nama Pelapor + Personil Tambahan jika ada
-  const utama = e['Nama Pelapor']||'';
-  const tambahan = e['Personil Tambahan']|| e['personilTambahanStr']|| e['Tim Pelaksana']||'';
-  const combined = [utama, tambahan].filter(Boolean).join(', ');
-  return splitPelaporNames(combined);
-}
 
 
-let ADDITIONAL_PERSONIL_ROWS = []; // [{id, nama}]
+let ADDITIONAL_PERSONIL_ROWS = [];
 let ADDITIONAL_PERSONIL_ID = 0;
-
-function getPersonilOptionsHtml(selectedValue=''){
+function getPersonilOptionsHtml(selectedValue){
   const names = PERSONIL.map(p=>p['Nama Personil']).filter(Boolean).sort();
   let html = '<option value="">Pilih personil...</option>';
   names.forEach(n=>{
     const sel = n===selectedValue ? ' selected' : '';
-    html += `<option value="${escapeHtml(n)}"${sel}>${escapeHtml(n)}</option>`;
+    html += '<option value="' + escapeHtml(n) + '"' + sel + '>' + escapeHtml(n) + '</option>';
   });
   return html;
 }
-
 function populatePelaporSelect(){
   const names = PERSONIL.map(p=>p['Nama Personil']).filter(Boolean).sort();
-  const optionsHtml = '<option value="">Pilih personil...</option>' + names.map(n=>`<option>${escapeHtml(n)}</option>`).join('');
+  const optionsHtml = '<option value="">Pilih personil...</option>' + names.map(n=>'<option>' + escapeHtml(n) + '</option>').join('');
   ['#select-namaPelapor', '#select-pmPetugas', '#patrol-nama-pelapor'].forEach(id=>{
     const sel = $(id);
     if(!sel) return;
@@ -7259,26 +7244,21 @@ function populatePelaporSelect(){
     sel.innerHTML = optionsHtml;
     if(current && names.includes(current)) sel.value = current;
   });
-  // refresh additional personil selects juga
   renderAdditionalPersonil();
 }
-
 function renderAdditionalPersonil(){
   const container = document.getElementById('additional-personil-container');
   if(!container) return;
   if(!ADDITIONAL_PERSONIL_ROWS.length){
-    container.innerHTML = '<div style="font-size:12px;color:var(--text-dim);padding:6px 0;">Belum ada personil tambahan. Klik "Tambah Personil Lain" jika pekerjaan tim.</div>';
+    container.innerHTML = '<div style="font-size:12px;color:var(--text-dim);padding:6px 0;">Belum ada personil tambahan.</div>';
     return;
   }
-  container.innerHTML = ADDITIONAL_PERSONIL_ROWS.map(row=>`
-    <div class="additional-personil-row" data-id="${row.id}" style="display:flex;gap:8px;align-items:center;">
-      <select class="additional-personil-select" data-id="${row.id}" style="flex:1;">
-        ${getPersonilOptionsHtml(row.nama)}
-      </select>
-      <button type="button" class="btn btn-ghost btn-sm additional-personil-remove" data-id="${row.id}" title="Hapus personil ini"><i class="ph-bold ph-x"></i></button>
-    </div>
-  `).join('');
-  // bind change
+  container.innerHTML = ADDITIONAL_PERSONIL_ROWS.map(row=>{
+    return '<div class="additional-personil-row" data-id="' + row.id + '" style="display:flex;gap:8px;align-items:center;">' +
+      '<select class="additional-personil-select" data-id="' + row.id + '" style="flex:1;">' + getPersonilOptionsHtml(row.nama) + '</select>' +
+      '<button type="button" class="btn btn-ghost btn-sm additional-personil-remove" data-id="' + row.id + '">X</button>' +
+      '</div>';
+  }).join('');
   container.querySelectorAll('.additional-personil-select').forEach(sel=>{
     sel.addEventListener('change', (e)=>{
       const id = Number(e.target.dataset.id);
@@ -7296,40 +7276,27 @@ function renderAdditionalPersonil(){
     });
   });
 }
-
-function addAdditionalPersonilRow(preselected=''){
+function addAdditionalPersonilRow(preselected){
   ADDITIONAL_PERSONIL_ID++;
-  ADDITIONAL_PERSONIL_ROWS.push({id: ADDITIONAL_PERSONIL_ID, nama: preselected});
+  ADDITIONAL_PERSONIL_ROWS.push({id: ADDITIONAL_PERSONIL_ID, nama: preselected||''});
   renderAdditionalPersonil();
   saveFormEntryDraftDebounced();
 }
-
 function getAdditionalPersonilNames(){
   return ADDITIONAL_PERSONIL_ROWS.map(r=>r.nama).filter(Boolean).map(s=>String(s).trim()).filter(Boolean);
 }
-
 function resetAdditionalPersonil(){
   ADDITIONAL_PERSONIL_ROWS = [];
   ADDITIONAL_PERSONIL_ID = 0;
   renderAdditionalPersonil();
 }
 
-
-// Bind tambah personil tambahan
-document.addEventListener('DOMContentLoaded', ()=>{
-  const btnAddTambahan = document.getElementById('btn-add-personil-tambahan');
-  if(btnAddTambahan){
-    btnAddTambahan.addEventListener('click', ()=> addAdditionalPersonilRow());
-  }
-});
-// Also bind immediately if DOM already ready
-setTimeout(()=>{
-  const btnAddTambahan = document.getElementById('btn-add-personil-tambahan');
-  if(btnAddTambahan && !btnAddTambahan.dataset.bound){
-    btnAddTambahan.dataset.bound='1';
-    btnAddTambahan.addEventListener('click', ()=> addAdditionalPersonilRow());
-  }
-}, 500);
+function getAllPersonilFromEntry(e){
+  const utama = e['Nama Pelapor']||'';
+  const tambahan = e['Personil Tambahan']|| e['personilTambahanStr']|| e['Tim Pelaksana']||'';
+  const combined = [utama, tambahan].filter(Boolean).join(', ');
+  return splitPelaporNames(combined);
+}
 
 
 const MACHINE_LAINNYA_VALUE = '__lainnya__';
@@ -8135,16 +8102,8 @@ if(btnRefreshDurasi) btnRefreshDurasi.addEventListener('click', async ()=>{ awai
 
 function anIsBreakdown(e){
   const jp = String(e['Jenis Pekerjaan']||'').toLowerCase();
-  // PATCHED: Preventive Maintenance TIDAK masuk sebagai data kerusakan/masalah
   if(jp.includes('preventive')) return false;
-  if(jp.includes('predictive') && !jp.includes('corrective') && !jp.includes('emergency')) {
-    // Predictive yang bukan corrective/emergency juga bukan breakdown murni, tapi tetap bisa dihitung sebagai potensi masalah
-    // Untuk konsistensi dengan permintaan: hanya Preventive yang benar-benar dikeluarkan dari kerusakan
-    // Predictive tetap dianggap bukan breakdown kecuali ada downtime
-  }
   if(jp.includes('corrective') || jp.includes('perbaikan') || jp.includes('breakdown') || jp.includes('repair') || jp.includes('emergency')) return true;
-  // Kalau jenisnya Preventive, jangan anggap breakdown walau ada downtime (downtime PM adalah planned)
-  if(jp.includes('preventive')) return false;
   return parseDurationMinutes(e) !== null && !jp.includes('preventive');
 }
 function anEntryHour(e){
@@ -14152,8 +14111,7 @@ function expertFinderStats(entriesSubset){
   const registeredNames = new Set(PERSONIL.map(p=>p['Nama Personil']).filter(Boolean));
   const stats = {};
   entriesSubset.forEach(e=>{
-    // PATCHED: hitung juga personil tambahan (tim), dan exclude Preventive dari breakdown
-    const names = ((typeof getAllPersonilFromEntry==='function') ? getAllPersonilFromEntry(e) : splitPelaporNames(e['Nama Pelapor'])).filter(n=> registeredNames.has(n));
+    const names = splitPelaporNames(e['Nama Pelapor']).filter(n=> registeredNames.has(n));
     const isDone = String(e['Status']||'').toLowerCase().includes('selesai');
     const isBreakdown = anIsBreakdown(e);
     const d = new Date(e['Tanggal']);
@@ -14897,9 +14855,7 @@ function renderDashboardView(){
     const e = latestMap[m.nama];
     let logKey = e ? dashStatusKey(e['Status']) : 'none';
     const logTs = e ? new Date(e['Timestamp Input']).getTime() : -Infinity;
-    // PATCHED: Preventive Maintenance tidak dianggap kerusakan/masalah
     if(e && String(e['Jenis Pekerjaan']||'').toLowerCase().includes('preventive')){
-      // Preventive yang Selesai = normal, Proses = normal (kerja terencana, bukan gangguan)
       if(logKey==='perhatian' || logKey==='kritikal') logKey='normal';
     }
     const pm = pmMap[m.nama];
@@ -15098,7 +15054,7 @@ function openDetail(id){
   const atts = parseAttachments(e['Lampiran (JSON)']);
   const mesinKey = e['Kode Mesin'] || e['Nama Mesin'];
   const mesinLabel = [e['Kode Mesin'], e['Nama Mesin']].filter(Boolean).join(' — ');
-  const pelaporHtml = ((typeof getAllPersonilFromEntry==='function') ? getAllPersonilFromEntry(e) : splitPelaporNames(e['Nama Pelapor'])).map(n=> wikiLinkHtml('personil', n, n)).join(', ');
+  const pelaporHtml = splitPelaporNames(e['Nama Pelapor']).map(n=> wikiLinkHtml('personil', n, n)).join(', ');
   const materialHtml = parseSparepartDetail(e).filter(d=>d.nama).map(d=> wikiLinkHtml('sparepart', d.nama, d.nama + (d.qty>1 ? ` (${d.qty} pcs)` : ''))).join(', ');
   // Baris yang isinya nama entitas (mesin/personil/sparepart) dirender manual
   // memakai wikiLinkHtml supaya bisa diklik ke Maintenance Wikipedia; baris
@@ -15108,9 +15064,6 @@ function openDetail(id){
     'Kode / Nama Mesin': mesinKey ? wikiLinkHtml('mesin', mesinKey, mesinLabel) : '',
     'Nama Material': materialHtml
   };
-    const allPersonil = (typeof getAllPersonilFromEntry === 'function') ? getAllPersonilFromEntry(e) : splitPelaporNames(e['Nama Pelapor']);
-  const pelaporDisplay = allPersonil.map(n=> wikiLinkHtml('personil', n, n)).join(', ');
-  const isPreventive = String(e['Jenis Pekerjaan']||'').toLowerCase().includes('preventive') || String(e['Is Preventive']||'').toUpperCase()==='TRUE';
   const rows = [
     ['ID', e['ID']],
     ['Tanggal', fmtDate(e['Tanggal'])],
@@ -15118,11 +15071,7 @@ function openDetail(id){
     ['Shift', e['Shift']],
     ['Grouping Pekerjaan', e['Grouping Pekerjaan']],
     ['Grouping Team', e['Grouping Team']],
-    ['Nama Pelapor / Tim', pelaporDisplay || e['Nama Pelapor']],
-    ['Personil Tambahan', e['Personil Tambahan']||''],
-    ['Semua Personil', e['Semua Personil']||''],
-    ['Jenis Pekerjaan', e['Jenis Pekerjaan'] + (isPreventive ? ' (Bukan Kerusakan - Preventive)' : '')],
-    ['Kategori', isPreventive ? 'Preventive Maintenance - Tidak dihitung sebagai breakdown' : 'Corrective / Breakdown'], 
+    ['Nama Pelapor', e['Nama Pelapor']],
     ['Nomor Notifikasi Pekerjaan', e['Nomor Notifikasi Pekerjaan']],
     ['Kode / Nama Mesin', mesinLabel],
     ['Nama Unit (Sub-Mesin)', e['Nama Unit']],
@@ -15803,24 +15752,15 @@ $('#form-entry').addEventListener('submit', async (ev)=>{
       String(m['Nama Mesin']||'').trim() === entry.namaMesin
     );
     entry.lokasi = selectedMachine ? String(selectedMachine['Lokasi/Area']||'').trim() : '';
-    // Personil tambahan (opsional, tidak wajib) - PATCHED
     const additionalNames = (typeof getAdditionalPersonilNames === 'function') ? getAdditionalPersonilNames() : [];
-    entry.personilTambahan = additionalNames; // array
-    entry.personilTambahanStr = additionalNames.join(', '); // string untuk sheet
+    entry.personilTambahan = additionalNames;
+    entry.personilTambahanStr = additionalNames.join(', ');
     entry.semuaPersonil = [entry.namaPelapor, ...additionalNames].filter(Boolean).join(', ');
-    
-    // Jika jenis pekerjaan Preventive Maintenance, tandai sebagai bukan kerusakan
     const jenisLower = String(entry.jenisPekerjaan||'').toLowerCase();
     entry.isPreventive = jenisLower.includes('preventive');
     if(entry.isPreventive){
-      // Preventive tidak dianggap masalah/kerusakan, jadi deskripsi masalah bisa diisi checklist PM
-      // Tetap simpan, tapi flag ini dipakai di analitik untuk exclude dari breakdown count
       entry.kategoriKerusakan = 'Preventive (Bukan Kerusakan)';
     }
-
-    // Sparepart opsional — tidak ada validasi wajib isi sparepart di sini
-    // maupun di langkah-langkah wizard sebelumnya (baris dengan qty
-    // kosong/0 otomatis dianggap tidak dipakai dan dilewati).
     const sparepartFields = buildMaterialFieldsFromRows();
     entry.namaMaterial = sparepartFields.namaMaterial;
     entry.materialNumberSAP = sparepartFields.materialNumberSAP;
@@ -18714,11 +18654,11 @@ async function exportProjectXlsx(id){
     const originalLabel = submitBtn.innerHTML;
     submitBtn.innerHTML = '<i class="ph-bold ph-circle-notch ph-spin"></i> Memeriksa...';
     try{
-      const res = await fetch(WEB_APP_URL, {
+      const res = await fetchWithTimeout_(WEB_APP_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify({ action: 'login', username: u, password: p })
-      });
+      }, 30000);
       const json = await parseApiResponse_(res);
       if(!json.ok){
         errEl.textContent = json.error || 'Username atau password salah. Silakan coba lagi.';
@@ -25283,6 +25223,24 @@ if(typeof window.goToView === 'function' && !window.goToView.__tabsWrapped){
       switchSettingTab(last);
     }
   });
+})();
+
+
+// SAFE BINDING for additional personil button - after all functions defined
+(function(){
+  function bindAddPersonilBtn(){
+    const btn = document.getElementById('btn-add-personil-tambahan');
+    if(btn && !btn.dataset.bound){
+      btn.dataset.bound='1';
+      btn.addEventListener('click', ()=> addAdditionalPersonilRow());
+    }
+  }
+  if(document.readyState==='loading'){
+    document.addEventListener('DOMContentLoaded', bindAddPersonilBtn);
+  } else {
+    bindAddPersonilBtn();
+  }
+  setTimeout(bindAddPersonilBtn, 800);
 })();
 
 </script>
