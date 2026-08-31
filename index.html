@@ -3056,12 +3056,19 @@ pre, code{ white-space:pre-wrap; word-break:break-word; overflow-wrap:anywhere; 
             </div>
           </div>
           <div class="grid2">
-            <div class="field"><label>Nama Pelapor / Teknisi</label>
+            <div class="field"><label>Nama Pelapor / Teknisi Utama <span style="color:var(--red);">*</span></label>
               <select name="namaPelapor" id="select-namaPelapor" required>
                 <option value="">Pilih personil...</option>
               </select>
+              <div class="sub" style="margin-top:4px;">Teknisi utama yang bertanggung jawab. Jika pekerjaan tim, tambah personil lain di bawah.</div>
             </div>
             <div class="field"><label>Nomor Notifikasi Pekerjaan</label><input type="text" name="nomorNotifikasi" placeholder="Contoh: 10023456" required></div>
+          </div>
+          <div class="field" id="field-additional-personil" style="margin-top:10px;">
+            <label>Personil Tambahan (Opsional - tidak wajib diisi)</label>
+            <div class="sub" style="margin-bottom:8px;">Jika pekerjaan dikerjakan lebih dari 1 orang, klik tombol di bawah untuk menambah personil lain. Bisa kosong jika hanya 1 orang.</div>
+            <div id="additional-personil-container" style="display:flex; flex-direction:column; gap:8px;"></div>
+            <button type="button" class="btn btn-ghost btn-sm" id="btn-add-personil-tambahan" style="margin-top:8px;"><i class="ph-bold ph-users-three"></i> Tambah Personil Lain</button>
           </div>
 
           <div class="section-title" style="margin-top:6px;"><i class="ph-bold ph-gear-six"></i> Mesin / Peralatan</div>
@@ -4529,6 +4536,7 @@ pre, code{ white-space:pre-wrap; word-break:break-word; overflow-wrap:anywhere; 
         <button class="btn btn-ghost sp-tab-btn" data-sptab="sp-tabPO"><i class="ph-bold ph-truck"></i> PO Monitoring</button>
         <button class="btn btn-ghost sp-tab-btn" data-sptab="sp-tabWarehouse"><i class="ph-bold ph-warehouse"></i> Warehouse Validation</button>
         <button class="btn btn-ghost sp-tab-btn" data-sptab="sp-tabOpname"><i class="ph-bold ph-clipboard-text"></i> Stock Opname</button>
+        <button class="btn btn-ghost sp-tab-btn" data-sptab="sp-tabMaster"><i class="ph-bold ph-database"></i> Master Sparepart</button>
       </div>
 
       <!-- ============ TAB 1: DAILY SPAREPART COLLECTION ============ -->
@@ -4673,6 +4681,32 @@ pre, code{ white-space:pre-wrap; word-break:break-word; overflow-wrap:anywhere; 
         </div>
         <div id="list-sparepart-opname"></div>
       </div>
+
+      <!-- ============ TAB 5: MASTER SPAREPART (dipindah dari Master Koneksi) ============ -->
+      <div id="sp-tabMaster" class="sp-tab-panel">
+        <div class="card" style="margin-bottom:18px;">
+          <div class="section-title"><i class="ph-bold ph-map-pin"></i> Master Sparepart — Lokasi, Harga &amp; Stock Gudang</div>
+          <div class="sub" style="margin-bottom:12px;">
+            Satu data master per Material Number SAP dipakai bersama oleh SELURUH fitur yang berhubungan dengan sparepart:
+            kartu ringkasan &amp; grafik cost di menu Sparepart, kartu lokasi rak yang otomatis dicocokkan dari form input Logbook,
+            dan Stock Sistem di checklist Stock Opname. Cukup diisi/diedit di satu tempat ini.
+            <br>Sebelumnya ada di menu Master Koneksi, sekarang dipindah ke sini supaya 1 tempat dengan Daily Collection &amp; PO Monitoring.
+          </div>
+          <div class="grid3">
+            <div class="field"><label>Material Number SAP</label><input type="text" id="sl-sap" placeholder="1000234567"></div>
+            <div class="field"><label>Nama Material</label><input type="text" id="sl-nama" placeholder="Bearing 6205"></div>
+            <div class="field"><label>Lokasi Gudang/Rak</label><input type="text" id="sl-lokasi" placeholder="Gudang A - Rak 3B"></div>
+          </div>
+          <div class="grid3">
+            <div class="field"><label>Harga Satuan (Rp)</label><input type="number" id="sl-harga" min="0" step="100" placeholder="0"></div>
+            <div class="field"><label>Stock Qty</label><input type="number" id="sl-stock" min="0" step="1" placeholder="0"></div>
+            <div class="field"><label>Satuan</label><input type="text" id="sl-satuan" placeholder="cth: pcs, unit, set"></div>
+          </div>
+          <button class="btn btn-sm" id="btn-save-sparepart-lokasi">+ Simpan Data Sparepart</button>
+          <button class="btn btn-sm" id="btn-cancel-edit-sparepart-lokasi" style="display:none;">Batal Edit</button>
+          <div style="margin-top:16px;" id="sparepart-lokasi-table"></div>
+        </div>
+      </div>
     </section>
 
     <section class="view" id="view-expert-finder">
@@ -4790,158 +4824,181 @@ pre, code{ white-space:pre-wrap; word-break:break-word; overflow-wrap:anywhere; 
     </section>
 
     <section class="view" id="view-setting">
-      <div class="topbar"><div><h1>Master Mesin, Personil &amp; Koneksi</h1><div class="sub">Kelola daftar mesin, personil, dan URL koneksi backend.</div></div></div>
+      <div class="topbar"><div><h1>Master Mesin, Personil &amp; Koneksi</h1><div class="sub">Kelola daftar mesin, personil, dan URL koneksi backend. Pilih tab di bawah untuk membuka kategori.</div></div></div>
 
-      <div class="card" style="margin-bottom:18px;">
-        <div class="section-title"><i class="ph-bold ph-link"></i> URL Web App (Google Apps Script)</div>
-        <div class="field">
-          <input type="text" id="input-webapp-url" placeholder="https://script.google.com/macros/s/XXXXXXXX/exec">
+      <style>
+        .setting-tabs-wrap{position:sticky; top:0; z-index:20; background:var(--panel); border-bottom:1px solid var(--line); margin:-6px 0 18px 0; padding-top:8px;}
+        .setting-tabs{display:flex; gap:8px; overflow-x:auto; overflow-y:hidden; padding:6px 2px 10px 2px; scrollbar-width:thin;}
+        .setting-tabs::-webkit-scrollbar{height:6px;}
+        .setting-tab-btn{white-space:nowrap; display:inline-flex; align-items:center; gap:6px; padding:9px 14px; border-radius:999px; border:1px solid var(--line); background:var(--panel-2); color:var(--text-dim); font-family:var(--font-display); font-weight:600; font-size:12.5px; letter-spacing:.2px; cursor:pointer; transition:all 180ms ease; flex-shrink:0;}
+        .setting-tab-btn:hover{border-color:var(--red); color:var(--text); transform:translateY(-1px);}
+        .setting-tab-btn.active{background:var(--red); color:#fff; border-color:var(--red); box-shadow:0 4px 12px -4px var(--red-glow);}
+        .setting-tab-btn .ph-bold{font-size:14px;}
+        .setting-tab-panel{display:none; animation:settingTabIn 220ms ease;}
+        .setting-tab-panel.active{display:block;}
+        @keyframes settingTabIn{from{opacity:0; transform:translateY(6px);} to{opacity:1; transform:translateY(0);}}
+        .setting-tab-empty{padding:24px; text-align:center; color:var(--text-dim); font-size:13px;}
+      </style>
+
+      <div class="setting-tabs-wrap">
+        <div class="setting-tabs" id="setting-tabs">
+          <button class="setting-tab-btn active" data-tab="koneksi"><i class="ph-bold ph-link"></i> Koneksi</button>
+          <button class="setting-tab-btn" data-tab="users"><i class="ph-bold ph-shield-check"></i> User &amp; Akses</button>
+          <button class="setting-tab-btn" data-tab="mesin"><i class="ph-bold ph-gear-six"></i> Mesin</button>
+          <button class="setting-tab-btn" data-tab="patrol-template"><i class="ph-bold ph-list-checks"></i> Template Patrol</button>
+          <button class="setting-tab-btn" data-tab="patrol-kategori"><i class="ph-bold ph-toggle-right"></i> Kategori Patrol</button>
+          <button class="setting-tab-btn" data-tab="personil"><i class="ph-bold ph-users-three"></i> Personil</button>
+          <button class="setting-tab-btn" data-tab="formula"><i class="ph-bold ph-function"></i> Formula</button>
+          
         </div>
-        <button class="btn btn-primary btn-sm" id="btn-save-url">Simpan &amp; Hubungkan</button>
-        <span id="conn-status" style="margin-left:10px;font-size:12.5px;color:var(--text-dim);"></span>
       </div>
 
-      <!-- [RBAC] User Management & Role Access Management — khusus Superadmin,
-           dirender secara dinamis lewat renderRbacAdminSection() supaya tidak
-           tampil sama sekali untuk role selain Superadmin. -->
-      <div id="rbac-admin-section"></div>
-
-      <div class="card" style="margin-bottom:18px;">
-        <div class="section-title"><i class="ph-bold ph-plus-circle"></i> Tambah Mesin Baru</div>
-        <div class="grid3">
-          <div class="field"><label>Kode Mesin</label><input type="text" id="new-kode-mesin" placeholder="OFU-1"></div>
-          <div class="field"><label>Nama Mesin</label><input type="text" id="new-nama-mesin" placeholder="Offset Machine #5"></div>
-        </div>
-        <div class="grid3">
-          <div class="field"><label>Model</label><input type="text" id="new-model-mesin" placeholder="cth: CD 102-8+L"></div>
-          <div class="field"><label>Kategori</label><input type="text" id="new-kategori-mesin" placeholder="A - Offset Printing"></div>
-          <div class="field"><label>Lokasi/Area</label><input type="text" id="new-lokasi-mesin" placeholder="cth: Ruang Cetak Offset"></div>
-        </div>
-        <div class="field"><label>Nama Mesin (Deskripsi Lengkap)</label><input type="text" id="new-deskripsi-mesin" placeholder="cth: OFFSET UV INK - 5 MACHINE + INLINE INS"></div>
-        <div class="field"><label>Fungsi Mesin (Bahasa Indonesia)</label><textarea id="new-fungsi-mesin" rows="3" placeholder="Jelaskan fungsi mesin ini secara singkat."></textarea></div>
-        <div class="field"><label>Spesifikasi Mesin</label><textarea id="new-spesifikasi-mesin" rows="4" placeholder="cth: Kapasitas 8000 lembar/jam, tahun pembuatan 2015, tegangan 380V, dst."></textarea></div>
-        <div class="grid2">
-          <div class="field"><label>Link Manual Book / Referensi</label><input type="text" id="new-link-referensi-mesin" placeholder="https://..."></div>
-          <div class="field"><label>Keterangan Sumber</label><input type="text" id="new-keterangan-sumber-mesin" placeholder="cth: Situs resmi pabrikan"></div>
-        </div>
-        <div class="field">
-          <label>Manual Book (PDF)</label>
-          <input type="file" id="new-manual-pdf" accept="application/pdf">
-          <div id="manual-pdf-preview" style="margin-top:8px;font-size:12px;color:var(--text-dim);"></div>
-        </div>
-        <button class="btn btn-sm" id="btn-add-machine">+ Tambah Mesin</button>
-        <button class="btn btn-sm" id="btn-cancel-edit-machine" style="display:none;">Batal Edit</button>
-        <div style="margin-top:16px;" id="machine-list-table"></div>
-      </div>
-
-      <div class="card" style="margin-bottom:18px;">
-        <div class="section-title"><i class="ph-bold ph-list-checks"></i> Template Checklist Patrol per Mesin</div>
-        <div class="sub" style="margin-bottom:12px;">
-          Item checklist spesifik untuk mesin tertentu (Area/Sub Area, Deskripsi Pemeriksaan, Kondisi Standar).
-          Item ini akan otomatis muncul tambahan di menu Patrol Harian saat mesin yang bersangkutan dipilih,
-          di luar checklist generik (Elektrikal/Mekanikal/dst) yang sudah ada.
-        </div>
-        <div class="grid3">
-          <div class="field"><label>Mesin</label>
-            <select id="pct-kode-mesin"><option value="">Pilih mesin...</option></select>
+      <!-- TAB: KONEKSI -->
+      <div class="setting-tab-panel active" id="setting-tab-panel-koneksi">
+        <div class="card" style="margin-bottom:18px;">
+          <div class="section-title"><i class="ph-bold ph-link"></i> URL Web App (Google Apps Script)</div>
+          <div class="field">
+            <input type="text" id="input-webapp-url" placeholder="https://script.google.com/macros/s/XXXXXXXX/exec">
           </div>
-          <div class="field"><label>Kategori</label><input type="text" id="pct-kategori" placeholder="cth: Elektrikal"></div>
-          <div class="field"><label>Area / Sub Area</label><input type="text" id="pct-subarea" placeholder="cth: Feed Table"></div>
-        </div>
-        <div class="grid2">
-          <div class="field"><label>Deskripsi Pemeriksaan</label><input type="text" id="pct-deskripsi" placeholder="cth: Check Pressure Pneumatic Air Compressor"></div>
-          <div class="field"><label>Kondisi Standar</label><input type="text" id="pct-standar" placeholder="cth: 7,00 - 7,47 Bar"></div>
-        </div>
-        <button class="btn btn-sm" id="btn-add-pct">+ Tambah Item Checklist</button>
-        <button class="btn btn-sm" id="btn-cancel-edit-pct" style="display:none;">Batal Edit</button>
-        <button class="btn btn-sm" id="btn-seed-pct-elektrikal" style="margin-left:6px;" title="Impor 45 item checklist elektrikal standar dari file Patroli_Check_List.xlsx yang pernah diberikan"><i class="ph-bold ph-download-simple"></i> Impor Data Elektrikal Standar</button>
-        <button class="btn btn-sm" id="btn-seed-pct-mekanikal" style="margin-left:6px;" title="Impor 145 item checklist mekanikal standar dari file Patrol_Mekanik.xlsx yang pernah diberikan"><i class="ph-bold ph-download-simple"></i> Impor Data Mekanikal Standar</button>
-        <div style="margin-top:16px;" id="pct-list-table"></div>
-      </div>
-
-      <div class="card" style="margin-bottom:18px;">
-        <div class="section-title"><i class="ph-bold ph-toggle-right"></i> Kategori General Checking — Patrol Harian</div>
-        <div class="sub" style="margin-bottom:12px;">
-          Atur kategori mana saja dari checklist generik (berlaku untuk semua mesin) yang muncul di menu Patrol Harian,
-          serta atur ISI ITEM pemeriksaan di dalam tiap kategori (tambah/ubah/hapus).
-          Nonaktifkan kategori yang tidak relevan supaya petugas patrol hanya melihat pemeriksaan yang memang perlu dicek.
-          Checklist spesifik per mesin (dari Template Checklist Patrol di atas) TIDAK terpengaruh oleh pengaturan ini.
-        </div>
-        <div id="patrol-category-toggle-list" style="display:flex;flex-direction:column;gap:14px;"></div>
-        <button class="btn btn-sm" id="btn-add-patrol-category" style="margin-top:6px;"><i class="ph-bold ph-plus"></i> Tambah Kategori Baru</button>
-        <div style="margin-top:12px;">
-          <button class="btn btn-sm btn-primary" id="btn-save-patrol-category-config">Simpan Pengaturan</button>
-          <span id="patrol-category-config-status" style="margin-left:10px;font-size:12.5px;color:var(--text-dim);"></span>
+          <button class="btn btn-primary btn-sm" id="btn-save-url">Simpan &amp; Hubungkan</button>
+          <span id="conn-status" style="margin-left:10px;font-size:12.5px;color:var(--text-dim);"></span>
+          <div class="sub" style="margin-top:10px;">Tempel URL dari deployment <code>/exec</code> Apps Script. URL ini disimpan lokal di browser (localStorage) karena dibutuhkan untuk koneksi awal. Setelah simpan, semua setting lain di tab ini akan tersimpan di Google Sheets.<br><br><b>Semua tab lain (Mesin, Personil, Patrol, Formula, Sparepart) 100% tersimpan di Google Sheets</b>, bukan hanya lokal. Cek di Spreadsheet kamu akan muncul sheet baru: <code>Analitik_Config</code>, <code>Patrol_Category_Config</code>, <code>Patrol_General_Checklist</code>.</div>
         </div>
       </div>
 
-      <div class="card">
-        <div class="section-title"><i class="ph-bold ph-users-three"></i> Tambah Personil Baru</div>
-        <div class="grid2">
-          <div class="field"><label>Nama Personil</label><input type="text" id="new-nama-personil" placeholder="cth: Budi Santoso"></div>
-          <div class="field"><label>Grouping Team</label>
-            <select id="new-team-personil">
-              <option value="">-</option>
-              <option>A</option><option>B</option><option>C</option><option>D</option>
-            </select>
+      <!-- TAB: USER & AKSES -->
+      <div class="setting-tab-panel" id="setting-tab-panel-users">
+        <div id="rbac-admin-section"></div>
+        <div class="setting-tab-empty" id="rbac-empty-hint" style="display:none;">Memuat data user... Jika tetap kosong, pastikan kamu login sebagai Superadmin.</div>
+      </div>
+
+      <!-- TAB: MESIN -->
+      <div class="setting-tab-panel" id="setting-tab-panel-mesin">
+        <div class="card" style="margin-bottom:18px;">
+          <div class="section-title"><i class="ph-bold ph-plus-circle"></i> Tambah Mesin Baru</div>
+          <div class="grid3">
+            <div class="field"><label>Kode Mesin</label><input type="text" id="new-kode-mesin" placeholder="OFU-1"></div>
+            <div class="field"><label>Nama Mesin</label><input type="text" id="new-nama-mesin" placeholder="Offset Machine #5"></div>
+          </div>
+          <div class="grid3">
+            <div class="field"><label>Model</label><input type="text" id="new-model-mesin" placeholder="cth: CD 102-8+L"></div>
+            <div class="field"><label>Kategori</label><input type="text" id="new-kategori-mesin" placeholder="A - Offset Printing"></div>
+            <div class="field"><label>Lokasi/Area</label><input type="text" id="new-lokasi-mesin" placeholder="cth: Ruang Cetak Offset"></div>
+          </div>
+          <div class="field"><label>Nama Mesin (Deskripsi Lengkap)</label><input type="text" id="new-deskripsi-mesin" placeholder="cth: OFFSET UV INK - 5 MACHINE + INLINE INS"></div>
+          <div class="field"><label>Fungsi Mesin (Bahasa Indonesia)</label><textarea id="new-fungsi-mesin" rows="3" placeholder="Jelaskan fungsi mesin ini secara singkat."></textarea></div>
+          <div class="field"><label>Spesifikasi Mesin</label><textarea id="new-spesifikasi-mesin" rows="4" placeholder="cth: Kapasitas 8000 lembar/jam, tahun pembuatan 2015, tegangan 380V, dst."></textarea></div>
+          <div class="grid2">
+            <div class="field"><label>Link Manual Book / Referensi</label><input type="text" id="new-link-referensi-mesin" placeholder="https://..."></div>
+            <div class="field"><label>Keterangan Sumber</label><input type="text" id="new-keterangan-sumber-mesin" placeholder="cth: Situs resmi pabrikan"></div>
+          </div>
+          <div class="field">
+            <label>Manual Book (PDF)</label>
+            <input type="file" id="new-manual-pdf" accept="application/pdf">
+            <div id="manual-pdf-preview" style="margin-top:8px;font-size:12px;color:var(--text-dim);"></div>
+          </div>
+          <button class="btn btn-sm" id="btn-add-machine">+ Tambah Mesin</button>
+          <button class="btn btn-sm" id="btn-cancel-edit-machine" style="display:none;">Batal Edit</button>
+          <div style="margin-top:16px;" id="machine-list-table"></div>
+        </div>
+      </div>
+
+      <!-- TAB: TEMPLATE PATROL -->
+      <div class="setting-tab-panel" id="setting-tab-panel-patrol-template">
+        <div class="card" style="margin-bottom:18px;">
+          <div class="section-title"><i class="ph-bold ph-list-checks"></i> Template Checklist Patrol per Mesin</div>
+          <div class="sub" style="margin-bottom:12px;">
+            Item checklist spesifik untuk mesin tertentu (Area/Sub Area, Deskripsi Pemeriksaan, Kondisi Standar).
+            Item ini akan otomatis muncul tambahan di menu Patrol Harian saat mesin yang bersangkutan dipilih,
+            di luar checklist generik (Elektrikal/Mekanikal/dst) yang sudah ada.
+          </div>
+          <div class="grid3">
+            <div class="field"><label>Mesin</label>
+              <select id="pct-kode-mesin"><option value="">Pilih mesin...</option></select>
+            </div>
+            <div class="field"><label>Kategori</label><input type="text" id="pct-kategori" placeholder="cth: Elektrikal"></div>
+            <div class="field"><label>Area / Sub Area</label><input type="text" id="pct-subarea" placeholder="cth: Feed Table"></div>
+          </div>
+          <div class="grid2">
+            <div class="field"><label>Deskripsi Pemeriksaan</label><input type="text" id="pct-deskripsi" placeholder="cth: Check Pressure Pneumatic Air Compressor"></div>
+            <div class="field"><label>Kondisi Standar</label><input type="text" id="pct-standar" placeholder="cth: 7,00 - 7,47 Bar"></div>
+          </div>
+          <button class="btn btn-sm" id="btn-add-pct">+ Tambah Item Checklist</button>
+          <button class="btn btn-sm" id="btn-cancel-edit-pct" style="display:none;">Batal Edit</button>
+          <button class="btn btn-sm" id="btn-seed-pct-elektrikal" style="margin-left:6px;" title="Impor 45 item checklist elektrikal standar"><i class="ph-bold ph-download-simple"></i> Impor Data Elektrikal Standar</button>
+          <button class="btn btn-sm" id="btn-seed-pct-mekanikal" style="margin-left:6px;" title="Impor 145 item checklist mekanikal standar"><i class="ph-bold ph-download-simple"></i> Impor Data Mekanikal Standar</button>
+          <div style="margin-top:16px;" id="pct-list-table"></div>
+        </div>
+      </div>
+
+      <!-- TAB: KATEGORI PATROL -->
+      <div class="setting-tab-panel" id="setting-tab-panel-patrol-kategori">
+        <div class="card" style="margin-bottom:18px;">
+          <div class="section-title"><i class="ph-bold ph-toggle-right"></i> Kategori General Checking — Patrol Harian</div>
+          <div class="sub" style="margin-bottom:12px;">
+            Atur kategori mana saja dari checklist generik (berlaku untuk semua mesin) yang muncul di menu Patrol Harian,
+            serta atur ISI ITEM pemeriksaan di dalam tiap kategori (tambah/ubah/hapus).
+            Nonaktifkan kategori yang tidak relevan supaya petugas patrol hanya melihat pemeriksaan yang memang perlu dicek.
+            Checklist spesifik per mesin (dari Template Checklist Patrol di atas) TIDAK terpengaruh oleh pengaturan ini.
+          </div>
+          <div id="patrol-category-toggle-list" style="display:flex;flex-direction:column;gap:14px;"></div>
+          <button class="btn btn-sm" id="btn-add-patrol-category" style="margin-top:6px;"><i class="ph-bold ph-plus"></i> Tambah Kategori Baru</button>
+          <div style="margin-top:12px;">
+            <button class="btn btn-sm btn-primary" id="btn-save-patrol-category-config">Simpan Pengaturan</button>
+            <span id="patrol-category-config-status" style="margin-left:10px;font-size:12.5px;color:var(--text-dim);"></span>
           </div>
         </div>
-        <div class="grid2">
-          <div class="field"><label>Posisi / Jabatan</label><input type="text" id="new-jabatan-personil" placeholder="cth: Offset Mechanical Supervisor"></div>
-          <div class="field"><label>Foto Personil</label><input type="file" id="personil-photo-file" accept="image/*"></div>
-          <div class="field"><label>Preview Foto</label><div id="personil-photo-preview" style="min-height:120px;border:1px dashed var(--line);border-radius:10px;display:flex;align-items:center;justify-content:center;color:var(--text-dim);overflow:hidden;">Belum ada foto</div></div>
-        </div>
-        <button class="btn btn-sm" id="btn-add-personil">+ Tambah Personil</button>
-        <button class="btn btn-sm" id="btn-cancel-edit-personil" style="display:none;">Batal Edit</button>
-        <div style="margin-top:16px;" id="personil-list-table"></div>
       </div>
 
-      <div class="card" style="margin-bottom:18px;">
-        <div class="section-title"><i class="ph-bold ph-function"></i> Formula MTBF &amp; MTTR</div>
-        <div class="sub" style="margin-bottom:12px;">
-          Nilai ini dipakai sebagai dasar perhitungan otomatis di menu Dashboard Analitik:
-          <b>MTTR = Total Downtime ÷ Jumlah Breakdown</b>, dan
-          <b>MTBF = (Total Jam Operasi Tersedia − Total Downtime) ÷ Jumlah Breakdown</b>,
-          dengan Total Jam Operasi Tersedia = Jam Operasi per Hari × Jumlah Hari Periode × Jumlah Mesin.
+      <!-- TAB: PERSONIL -->
+      <div class="setting-tab-panel" id="setting-tab-panel-personil">
+        <div class="card">
+          <div class="section-title"><i class="ph-bold ph-users-three"></i> Tambah Personil Baru</div>
+          <div class="grid2">
+            <div class="field"><label>Nama Personil</label><input type="text" id="new-nama-personil" placeholder="cth: Budi Santoso"></div>
+            <div class="field"><label>Grouping Team</label>
+              <select id="new-team-personil">
+                <option value="">-</option>
+                <option>A</option><option>B</option><option>C</option><option>D</option>
+              </select>
+            </div>
+          </div>
+          <div class="grid2">
+            <div class="field"><label>Posisi / Jabatan</label><input type="text" id="new-jabatan-personil" placeholder="cth: Offset Mechanical Supervisor"></div>
+            <div class="field"><label>Foto Personil</label><input type="file" id="personil-photo-file" accept="image/*"></div>
+            <div class="field"><label>Preview Foto</label><div id="personil-photo-preview" style="min-height:120px;border:1px dashed var(--line);border-radius:10px;display:flex;align-items:center;justify-content:center;color:var(--text-dim);overflow:hidden;">Belum ada foto</div></div>
+          </div>
+          <button class="btn btn-sm" id="btn-add-personil">+ Tambah Personil</button>
+          <button class="btn btn-sm" id="btn-cancel-edit-personil" style="display:none;">Batal Edit</button>
+          <div style="margin-top:16px;" id="personil-list-table"></div>
         </div>
-        <div class="grid3">
-          <div class="field"><label>Jam Operasi per Hari</label><input type="number" id="cfg-jam-operasi" min="1" max="24" step="1" placeholder="24"></div>
-          <div class="field"><label>Jumlah Mesin Aktif (kosongkan = otomatis dari Database Mesin)</label><input type="number" id="cfg-jumlah-mesin" min="0" step="1" placeholder="Otomatis"></div>
-          <div class="field"><label>Estimasi Kerugian per Jam Downtime (Rp)</label><input type="number" id="cfg-kerugian-per-jam" min="0" step="1000" placeholder="5000000"></div>
-        </div>
-        <div class="sub" style="margin-bottom:12px;">
-          Nilai "Estimasi Kerugian per Jam Downtime" dipakai di kartu Smart Resume Pabrik pada menu Home untuk menghitung
-          estimasi kerugian finansial dari Total Lost Time 24 jam terakhir. Sesuaikan dengan perhitungan cost of downtime
-          pabrik yang sebenarnya (lost production value + biaya tenaga kerja standby, dsb).
-        </div>
-        <button class="btn btn-sm btn-primary" id="btn-save-analitik-config">Simpan Formula</button>
-        <span id="analitik-config-status" style="margin-left:10px;font-size:12.5px;color:var(--text-dim);"></span>
       </div>
 
-      <div class="card" style="margin-bottom:18px;">
-        <div class="section-title"><i class="ph-bold ph-map-pin"></i> Master Sparepart — Lokasi, Harga &amp; Stock Gudang</div>
-        <div class="sub" style="margin-bottom:12px;">
-          Satu data master per Material Number SAP dipakai bersama oleh SELURUH fitur yang berhubungan dengan sparepart:
-          kartu ringkasan &amp; grafik cost di menu Sparepart, kartu lokasi rak yang otomatis dicocokkan dari form input Logbook,
-          dan Stock Sistem di checklist Stock Opname. Cukup diisi/diedit di satu tempat ini.
-          Kolom Stock Qty &amp; Satuan menggantikan sheet <code>Stock_Sparepart</code> lama (read-only) — sekarang bisa diedit langsung dari sini
-          dan datanya otomatis dipakai di seluruh fitur terkait, termasuk sisa stock lama (kalau ada) yang otomatis diimpor sekali saat pertama dibuka.
+      <!-- TAB: FORMULA -->
+      <div class="setting-tab-panel" id="setting-tab-panel-formula">
+        <div class="card" style="margin-bottom:18px;">
+          <div class="section-title"><i class="ph-bold ph-function"></i> Formula MTBF &amp; MTTR</div>
+          <div class="sub" style="margin-bottom:12px;">
+            Nilai ini dipakai sebagai dasar perhitungan otomatis di menu Dashboard Analitik:
+            <b>MTTR = Total Downtime ÷ Jumlah Breakdown</b>, dan
+            <b>MTBF = (Total Jam Operasi Tersedia − Total Downtime) ÷ Jumlah Breakdown</b>,
+            dengan Total Jam Operasi Tersedia = Jam Operasi per Hari × Jumlah Hari Periode × Jumlah Mesin.
+          </div>
+          <div class="grid3">
+            <div class="field"><label>Jam Operasi per Hari</label><input type="number" id="cfg-jam-operasi" min="1" max="24" step="1" placeholder="24"></div>
+            <div class="field"><label>Jumlah Mesin Aktif (kosongkan = otomatis dari Database Mesin)</label><input type="number" id="cfg-jumlah-mesin" min="0" step="1" placeholder="Otomatis"></div>
+            <div class="field"><label>Estimasi Kerugian per Jam Downtime (Rp)</label><input type="number" id="cfg-kerugian-per-jam" min="0" step="1000" placeholder="5000000"></div>
+          </div>
+          <div class="sub" style="margin-bottom:12px;">
+            Nilai "Estimasi Kerugian per Jam Downtime" dipakai di kartu Smart Resume Pabrik pada menu Home untuk menghitung
+            estimasi kerugian finansial dari Total Lost Time 24 jam terakhir.
+          </div>
+          <button class="btn btn-sm btn-primary" id="btn-save-analitik-config">Simpan Formula</button>
+          <span id="analitik-config-status" style="margin-left:10px;font-size:12.5px;color:var(--text-dim);"></span>
         </div>
-        <div class="grid3">
-          <div class="field"><label>Material Number SAP</label><input type="text" id="sl-sap" placeholder="1000234567"></div>
-          <div class="field"><label>Nama Material</label><input type="text" id="sl-nama" placeholder="Bearing 6205"></div>
-          <div class="field"><label>Lokasi Gudang/Rak</label><input type="text" id="sl-lokasi" placeholder="Gudang A - Rak 3B"></div>
-        </div>
-        <div class="grid3">
-          <div class="field"><label>Harga Satuan (Rp)</label><input type="number" id="sl-harga" min="0" step="100" placeholder="0"></div>
-          <div class="field"><label>Stock Qty</label><input type="number" id="sl-stock" min="0" step="1" placeholder="0"></div>
-          <div class="field"><label>Satuan</label><input type="text" id="sl-satuan" placeholder="cth: pcs, unit, set"></div>
-        </div>
-        <button class="btn btn-sm" id="btn-save-sparepart-lokasi">+ Simpan Data Sparepart</button>
-        <button class="btn btn-sm" id="btn-cancel-edit-sparepart-lokasi" style="display:none;">Batal Edit</button>
-        <div style="margin-top:16px;" id="sparepart-lokasi-table"></div>
       </div>
-    </section>
+
+      </section>
 
     <!-- [THEME MANAGER] Dipindah keluar dari Master Koneksi menjadi menu
          mandiri (data-view="tema") supaya bisa diakses tanpa perlu login
@@ -6371,6 +6428,7 @@ function collectFormEntryDraft(){
     kodeMesinLainnya: kodeLainnya ? kodeLainnya.value : '',
     namaMesinLainnya: namaLainnya ? namaLainnya.value : '',
     spareparts: (typeof SPAREPART_ROWS !== 'undefined') ? SPAREPART_ROWS : [],
+    additionalPersonil: (typeof ADDITIONAL_PERSONIL_ROWS !== 'undefined') ? ADDITIONAL_PERSONIL_ROWS : [],
     step: LC_WIZARD_INDEX,
     ts: Date.now()
   };
@@ -6423,6 +6481,14 @@ function restoreFormEntryDraft(){
       SPAREPART_ROWS = draft.spareparts;
       SPAREPART_ROW_ID = Math.max(0, ...SPAREPART_ROWS.map(r=>r.id||0));
       renderSparepartRows();
+    }
+
+    if(Array.isArray(draft.additionalPersonil) && typeof ADDITIONAL_PERSONIL_ROWS !== 'undefined'){
+      ADDITIONAL_PERSONIL_ROWS = draft.additionalPersonil;
+      if(ADDITIONAL_PERSONIL_ROWS.length){
+        ADDITIONAL_PERSONIL_ID = Math.max(0, ...ADDITIONAL_PERSONIL_ROWS.map(r=>r.id||0));
+      }
+      renderAdditionalPersonil();
     }
 
     if(typeof computeEstimasi === 'function') computeEstimasi();
@@ -6481,27 +6547,41 @@ async function parseApiResponse_(res){
     throw new Error('Respons backend bukan JSON yang valid. HTTP ' + res.status + '.');
   }
 }
-async function fetchWithTimeout_(url, options={}, timeoutMs=15000){
+async function fetchWithTimeout_(url, options={}, timeoutMs=45000){
+  // PATCHED v2.1 - timeout 45s default + pesan cold start
   const controller = new AbortController();
   const timer = setTimeout(()=>controller.abort(), timeoutMs);
   try{ return await fetch(url, {...options, signal:controller.signal}); }
   catch(err){
-    if(err && err.name==='AbortError') throw new Error('Backend timeout setelah '+Math.round(timeoutMs/1000)+' detik.');
+    if(err && err.name==='AbortError') throw new Error('Backend timeout setelah '+Math.round(timeoutMs/1000)+' detik. Server Apps Script sedang cold start, coba lagi 5 detik.');
     throw err;
   }finally{ clearTimeout(timer); }
 }
-async function apiGet(action, params={}){
+async function apiGet(action, params={}, retries=2){
+  // PATCHED v2.1 - 45s + retry 2x dengan backoff, prioritas bootstrap
   if(!WEB_APP_URL){ throw new Error('NO_URL'); }
   if(!SESSION_TOKEN){ throw new Error('AUTH_REQUIRED'); }
   const requestToken = (SETTING_AUTH_OK && SETTING_SESSION_TOKEN) ? SETTING_SESSION_TOKEN : SESSION_TOKEN;
   const qs = new URLSearchParams({action, ...params, sessionToken:requestToken}).toString();
-  const res = await fetchWithTimeout_(WEB_APP_URL + '?' + qs, {}, 15000);
-  const json = await parseApiResponse_(res);
-  if(!json.ok){
-    if(/AUTH_REQUIRED|SESSION_INVALID|SESSION_EXPIRED|ACCOUNT_INACTIVE/.test(json.error || '')) logoutUser();
-    throw new Error(json.error || 'Gagal mengambil data');
+  let lastErr=null;
+  for(let attempt=0; attempt<=retries; attempt++){
+    try{
+      const res = await fetchWithTimeout_(WEB_APP_URL + '?' + qs, {}, 45000);
+      const json = await parseApiResponse_(res);
+      if(!json.ok){
+        if(/AUTH_REQUIRED|SESSION_INVALID|SESSION_EXPIRED|ACCOUNT_INACTIVE/.test(json.error || '')) logoutUser();
+        throw new Error(json.error || 'Gagal mengambil data');
+      }
+      return json.data;
+    }catch(e){
+      lastErr=e;
+      if(/AUTH_REQUIRED|SESSION_INVALID|SESSION_EXPIRED|ACCOUNT_INACTIVE/.test(e.message||'')) throw e;
+      if(attempt<retries){
+        await new Promise(r=>setTimeout(r, 1200*(attempt+1)));
+      }
+    }
   }
-  return json.data;
+  throw lastErr;
 }
 async function apiPost(payload){
   // Tetap antrekan operasi tulis ketika URL belum tersedia. Sebelumnya
@@ -6520,7 +6600,7 @@ async function apiPost(payload){
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: JSON.stringify(securedPayload)
-    }, 30000);
+    }, 60000); // PATCHED: 60s untuk POST (upload file bisa lama)
     const json = await parseApiResponse_(res);
     if(!json.ok){
       if(/AUTH_REQUIRED|SESSION_INVALID|SESSION_EXPIRED|ACCOUNT_INACTIVE/.test(json.error || '')) logoutUser();
@@ -6694,7 +6774,7 @@ async function flushSyncQueue_(){
     try{
       if(!SESSION_TOKEN) throw new Error('AUTH_REQUIRED');
       const requestToken = (SETTING_AUTH_OK && SETTING_SESSION_TOKEN) ? SETTING_SESSION_TOKEN : SESSION_TOKEN;
-      const res = await fetchWithTimeout_(WEB_APP_URL, { method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify({...item.payload, sessionToken:requestToken}) }, 30000);
+      const res = await fetchWithTimeout_(WEB_APP_URL, { method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify({...item.payload, sessionToken:requestToken}) }, 60000); // PATCHED 60s
       const json = await parseApiResponse_(res);
       if(!json.ok) throw new Error(json.error || 'gagal');
     }catch(e){
@@ -6735,7 +6815,7 @@ window.addEventListener('online', ()=> setAppOnlineStatus(true));
 window.addEventListener('offline', ()=> setAppOnlineStatus(false));
 // Polling berkala jaga-jaga: browser kadang telat memicu event 'online', atau
 // koneksi "menyala" tapi sebenarnya tidak bisa menjangkau Web App-nya.
-setInterval(()=>{ if(navigator.onLine) flushSyncQueue_(); }, 30000);
+setInterval(()=>{ if(navigator.onLine) flushSyncQueue_(); }, 60000); // PATCHED 60s
 renderOfflineBanner();
 
 /* ---------------- CONFIG BANNER ---------------- */
@@ -7044,39 +7124,99 @@ document.addEventListener('click', (ev)=>{
 
 /* ---------------- DATA LOADING ---------------- */
 async function loadAll(){
+  // PATCHED v2.1 - BOOTSTRAP 1-call untuk Home, background lazy untuk sisanya
   if(!WEB_APP_URL){ renderConfigBanner(); return; }
+  let homeRendered = false;
   try{
-    const [entries, machines] = await Promise.all([apiGet('list'), apiGet('machines')]);
-    ENTRIES = entries.sort((a,b)=> new Date(b['Timestamp Input']) - new Date(a['Timestamp Input']));
-    MACHINES = machines;
-    populateMachineSelects();
-    engPopulateAreaSelect();
-    populateAiFilters();
-    updateSidebarCounts();
-    renderConfigBanner();
+    // Coba endpoint baru bootstrap (1 request = machines + personil + recentEntries)
+    let boot = null;
+    try{
+      boot = await apiGet('bootstrap');
+    }catch(e){
+      console.warn('[OMODOS] bootstrap gagal, fallback ke list+machines:', e.message);
+    }
+    if(boot && (boot.machines || boot.recentEntries || boot.analitikConfig)){
+      const recent = boot.recentEntries || boot.entries || [];
+      ENTRIES = recent.sort((a,b)=> new Date(b['Timestamp Input']) - new Date(a['Timestamp Input']));
+      MACHINES = boot.machines || [];
+      if(boot.personil) PERSONIL = boot.personil;
+      if(boot.patrolTemplate) PATROL_TEMPLATE = boot.patrolTemplate;
+      // PATCHED FINAL: semua setting master koneksi langsung dari Google Sheets via bootstrap
+      if(boot.analitikConfig && Object.keys(boot.analitikConfig).length){
+        try{ saveAnalitikConfigLocal(boot.analitikConfig); }catch(e){}
+        ANALITIK_CONFIG = boot.analitikConfig;
+        if(typeof renderAnalitikConfigForm==='function'){ try{ renderAnalitikConfigForm(); }catch(e){} }
+      }
+      if(boot.patrolCategoryConfig && Object.keys(boot.patrolCategoryConfig).length){
+        try{ savePatrolCategoryConfigLocal(boot.patrolCategoryConfig); }catch(e){}
+        PATROL_CATEGORY_CONFIG = boot.patrolCategoryConfig;
+      }
+      if(boot.patrolGeneralChecklist && Object.keys(boot.patrolGeneralChecklist).length){
+        try{ savePatrolGeneralChecklistLocal(boot.patrolGeneralChecklist); }catch(e){}
+        PATROL_GENERAL_CHECKLIST = boot.patrolGeneralChecklist;
+      }
+      if(boot.sparepartLokasi && Array.isArray(boot.sparepartLokasi)){
+        try{ saveSparepartLokasiLocal(boot.sparepartLokasi); }catch(e){}
+        SPAREPART_LOKASI = boot.sparepartLokasi;
+      }
+      populateMachineSelects();
+      engPopulateAreaSelect();
+      populateAiFilters();
+      updateSidebarCounts();
+      populatePelaporSelect();
+      renderConfigBanner();
+      // RENDER HOME LANGSUNG
+      if(typeof renderDashboardView==='function'){
+        try{ renderDashboardView(); homeRendered=true; }catch(e){ console.warn(e); }
+      }
+      if(typeof renderHomeSmartResume==='function'){
+        try{ renderHomeSmartResume(); }catch(e){}
+      }
+    }
+    }else{
+      // Fallback lama: parallel list + machines
+      const [entries, machines] = await Promise.all([apiGet('list'), apiGet('machines')]);
+      ENTRIES = entries.sort((a,b)=> new Date(b['Timestamp Input']) - new Date(a['Timestamp Input']));
+      MACHINES = machines;
+      populateMachineSelects();
+      engPopulateAreaSelect();
+      populateAiFilters();
+      updateSidebarCounts();
+      renderConfigBanner();
+      if(typeof renderDashboardView==='function'){
+        try{ renderDashboardView(); homeRendered=true; }catch(e){}
+      }
+    }
   }catch(err){
     toast('Gagal memuat data: ' + err.message, true);
   }
-  try{
-    PERSONIL = await apiGet('personil');
-  }catch(err){
-    // action 'personil' mungkin belum tersedia di backend; gunakan nama dari data existing sebagai fallback
-    PERSONIL = PERSONIL || [];
-  }
-  populatePelaporSelect();
-  try{ PATROL_TEMPLATE = await apiGet('patrolChecklistTemplate'); }catch(err){ PATROL_TEMPLATE = PATROL_TEMPLATE || []; }
-  try{ await syncPmReportsFromBackend(); }catch(e){ /* fallback ke cache lokal sudah ditangani di dalam fungsi */ }
-  try{ await syncSparepartLokasiFromBackend(); }catch(e){}
-  try{ await syncSparepartStatusFromBackend(); }catch(e){}
-  try{ await syncSparepartEtaFromBackend(); }catch(e){}
-  try{ await syncSparepartWarehouseFromBackend(); }catch(e){}
-  try{ await syncSparepartOpnameFromBackend(); }catch(e){}
-  try{ await syncKpiKerjaFromBackend(); }catch(e){}
-  try{ await syncAnalitikConfigFromBackend(); }catch(e){}
-  try{ await syncPatrolCategoryConfigFromBackend(); }catch(e){}
-  try{ await syncPatrolGeneralChecklistFromBackend(); }catch(e){}
-  try{ await piSyncHardSkillFromBackend(); }catch(e){}
-  try{ await syncPiPersonnelMasterFromBackend(); }catch(e){}
+
+  // Background lazy load - tidak blok Home
+  setTimeout(async ()=>{
+    try{ 
+      if(!PERSONIL || !PERSONIL.length){
+        try{ PERSONIL = await apiGet('personil'); }catch(e){ PERSONIL = PERSONIL||[]; }
+        populatePelaporSelect();
+      }
+    }catch(e){}
+    try{ if(!PATROL_TEMPLATE || !PATROL_TEMPLATE.length){ PATROL_TEMPLATE = await apiGet('patrolChecklistTemplate'); } }catch(e){ PATROL_TEMPLATE = PATROL_TEMPLATE||[]; }
+    try{ await syncPmReportsFromBackend(); }catch(e){}
+    try{ await syncSparepartLokasiFromBackend(); }catch(e){}
+    try{ await syncSparepartStatusFromBackend(); }catch(e){}
+    try{ await syncSparepartEtaFromBackend(); }catch(e){}
+    try{ await syncSparepartWarehouseFromBackend(); }catch(e){}
+    try{ await syncSparepartOpnameFromBackend(); }catch(e){}
+    try{ await syncKpiKerjaFromBackend(); }catch(e){}
+    try{ await syncAnalitikConfigFromBackend(); }catch(e){}
+    try{ await syncPatrolCategoryConfigFromBackend(); }catch(e){}
+    try{ await syncPatrolGeneralChecklistFromBackend(); }catch(e){}
+    try{ await piSyncHardSkillFromBackend(); }catch(e){}
+    try{ await syncPiPersonnelMasterFromBackend(); }catch(e){}
+    // Refresh Home sekali lagi setelah background selesai, biar chip KPI/PO ikut update
+    if(typeof renderDashboardView==='function' && document.getElementById('view-dashboard') && document.getElementById('view-dashboard').classList.contains('active')){
+      try{ renderDashboardView(); }catch(e){}
+    }
+  }, 400);
 }
 
 /* ---------------- PELAPOR NAME SPLITTING ----------------
@@ -7084,8 +7224,29 @@ async function loadAll(){
    garis miring "/", misal: "Dede Jumadi/Dwi Sugeng Kurniawan/Nur Wahyudi".
    Fungsi ini memecahnya menjadi array nama individu yang sudah di-trim. */
 function splitPelaporNames(str){
-  if(!str) return ['Tanpa Nama'];
-  return String(str).split(/[\/\-&]+/,).map(s=>s.trim()).filter(Boolean);
+  // PATCHED: support semuaPersonil dan personil tambahan yang dipisah koma
+  return String(str||'').split(/[,;]+/).map(s=>s.trim()).filter(Boolean);
+}
+function getAllPersonilFromEntry(e){
+  // Gabungkan Nama Pelapor + Personil Tambahan jika ada
+  const utama = e['Nama Pelapor']||'';
+  const tambahan = e['Personil Tambahan']|| e['personilTambahanStr']|| e['Tim Pelaksana']||'';
+  const combined = [utama, tambahan].filter(Boolean).join(', ');
+  return splitPelaporNames(combined);
+}
+
+
+let ADDITIONAL_PERSONIL_ROWS = []; // [{id, nama}]
+let ADDITIONAL_PERSONIL_ID = 0;
+
+function getPersonilOptionsHtml(selectedValue=''){
+  const names = PERSONIL.map(p=>p['Nama Personil']).filter(Boolean).sort();
+  let html = '<option value="">Pilih personil...</option>';
+  names.forEach(n=>{
+    const sel = n===selectedValue ? ' selected' : '';
+    html += `<option value="${escapeHtml(n)}"${sel}>${escapeHtml(n)}</option>`;
+  });
+  return html;
 }
 
 function populatePelaporSelect(){
@@ -7098,7 +7259,78 @@ function populatePelaporSelect(){
     sel.innerHTML = optionsHtml;
     if(current && names.includes(current)) sel.value = current;
   });
+  // refresh additional personil selects juga
+  renderAdditionalPersonil();
 }
+
+function renderAdditionalPersonil(){
+  const container = document.getElementById('additional-personil-container');
+  if(!container) return;
+  if(!ADDITIONAL_PERSONIL_ROWS.length){
+    container.innerHTML = '<div style="font-size:12px;color:var(--text-dim);padding:6px 0;">Belum ada personil tambahan. Klik "Tambah Personil Lain" jika pekerjaan tim.</div>';
+    return;
+  }
+  container.innerHTML = ADDITIONAL_PERSONIL_ROWS.map(row=>`
+    <div class="additional-personil-row" data-id="${row.id}" style="display:flex;gap:8px;align-items:center;">
+      <select class="additional-personil-select" data-id="${row.id}" style="flex:1;">
+        ${getPersonilOptionsHtml(row.nama)}
+      </select>
+      <button type="button" class="btn btn-ghost btn-sm additional-personil-remove" data-id="${row.id}" title="Hapus personil ini"><i class="ph-bold ph-x"></i></button>
+    </div>
+  `).join('');
+  // bind change
+  container.querySelectorAll('.additional-personil-select').forEach(sel=>{
+    sel.addEventListener('change', (e)=>{
+      const id = Number(e.target.dataset.id);
+      const r = ADDITIONAL_PERSONIL_ROWS.find(x=>x.id===id);
+      if(r) r.nama = e.target.value;
+      saveFormEntryDraftDebounced();
+    });
+  });
+  container.querySelectorAll('.additional-personil-remove').forEach(btn=>{
+    btn.addEventListener('click', (e)=>{
+      const id = Number(e.currentTarget.dataset.id);
+      ADDITIONAL_PERSONIL_ROWS = ADDITIONAL_PERSONIL_ROWS.filter(x=>x.id!==id);
+      renderAdditionalPersonil();
+      saveFormEntryDraftDebounced();
+    });
+  });
+}
+
+function addAdditionalPersonilRow(preselected=''){
+  ADDITIONAL_PERSONIL_ID++;
+  ADDITIONAL_PERSONIL_ROWS.push({id: ADDITIONAL_PERSONIL_ID, nama: preselected});
+  renderAdditionalPersonil();
+  saveFormEntryDraftDebounced();
+}
+
+function getAdditionalPersonilNames(){
+  return ADDITIONAL_PERSONIL_ROWS.map(r=>r.nama).filter(Boolean).map(s=>String(s).trim()).filter(Boolean);
+}
+
+function resetAdditionalPersonil(){
+  ADDITIONAL_PERSONIL_ROWS = [];
+  ADDITIONAL_PERSONIL_ID = 0;
+  renderAdditionalPersonil();
+}
+
+
+// Bind tambah personil tambahan
+document.addEventListener('DOMContentLoaded', ()=>{
+  const btnAddTambahan = document.getElementById('btn-add-personil-tambahan');
+  if(btnAddTambahan){
+    btnAddTambahan.addEventListener('click', ()=> addAdditionalPersonilRow());
+  }
+});
+// Also bind immediately if DOM already ready
+setTimeout(()=>{
+  const btnAddTambahan = document.getElementById('btn-add-personil-tambahan');
+  if(btnAddTambahan && !btnAddTambahan.dataset.bound){
+    btnAddTambahan.dataset.bound='1';
+    btnAddTambahan.addEventListener('click', ()=> addAdditionalPersonilRow());
+  }
+}, 500);
+
 
 const MACHINE_LAINNYA_VALUE = '__lainnya__';
 // Kode Mesin & Nama Mesin pada form Input Logbook sekarang murni bersumber
@@ -7903,8 +8135,17 @@ if(btnRefreshDurasi) btnRefreshDurasi.addEventListener('click', async ()=>{ awai
 
 function anIsBreakdown(e){
   const jp = String(e['Jenis Pekerjaan']||'').toLowerCase();
-  if(jp.includes('corrective') || jp.includes('perbaikan') || jp.includes('breakdown') || jp.includes('repair')) return true;
-  return parseDurationMinutes(e) !== null;
+  // PATCHED: Preventive Maintenance TIDAK masuk sebagai data kerusakan/masalah
+  if(jp.includes('preventive')) return false;
+  if(jp.includes('predictive') && !jp.includes('corrective') && !jp.includes('emergency')) {
+    // Predictive yang bukan corrective/emergency juga bukan breakdown murni, tapi tetap bisa dihitung sebagai potensi masalah
+    // Untuk konsistensi dengan permintaan: hanya Preventive yang benar-benar dikeluarkan dari kerusakan
+    // Predictive tetap dianggap bukan breakdown kecuali ada downtime
+  }
+  if(jp.includes('corrective') || jp.includes('perbaikan') || jp.includes('breakdown') || jp.includes('repair') || jp.includes('emergency')) return true;
+  // Kalau jenisnya Preventive, jangan anggap breakdown walau ada downtime (downtime PM adalah planned)
+  if(jp.includes('preventive')) return false;
+  return parseDurationMinutes(e) !== null && !jp.includes('preventive');
 }
 function anEntryHour(e){
   const t = fmtTime(e['Waktu']);
@@ -11065,8 +11306,12 @@ if(btnSaveSparepartLokasi) btnSaveSparepartLokasi.addEventListener('click', asyn
   saveSparepartLokasiLocal(list);
   resetSparepartLokasiForm();
   renderSparepartLokasiTable();
-  try{ await apiPost({ action:'saveSparepartLokasi', lokasi: data }); toast('Data sparepart tersimpan'); }
-  catch(e){ toast('Tersimpan lokal, gagal sinkron ke server: '+e.message, true); }
+  try{
+    await apiPost({ action:'saveSparepartLokasi', lokasi: data });
+    toast('✓ Data sparepart tersimpan di Google Sheets (sheet Sparepart_Lokasi)');
+  }catch(e){
+    toast('✗ Tersimpan lokal, gagal sinkron ke Google Sheets: '+e.message, true);
+  }
 });
 const btnCancelSparepartLokasi = $('#btn-cancel-edit-sparepart-lokasi');
 if(btnCancelSparepartLokasi) btnCancelSparepartLokasi.addEventListener('click', resetSparepartLokasiForm);
@@ -12932,9 +13177,15 @@ if(btnSaveAnalitikConfig) btnSaveAnalitikConfig.addEventListener('click', async 
     kerugianPerJam: Number($('#cfg-kerugian-per-jam').value) > 0 ? Number($('#cfg-kerugian-per-jam').value) : HOME_KERUGIAN_PER_JAM_RP_DEFAULT
   };
   saveAnalitikConfigLocal(cfg);
-  $('#analitik-config-status').textContent = 'Tersimpan lokal...';
-  try{ await apiPost({ action:'saveAnalitikConfig', ...cfg }); $('#analitik-config-status').textContent = 'Tersimpan & tersinkron ✓'; }
-  catch(e){ $('#analitik-config-status').textContent = 'Tersimpan lokal (gagal sinkron ke server)'; }
+  $('#analitik-config-status').textContent = 'Menyimpan ke Google Sheets...';
+  try{
+    const res = await apiPost({ action:'saveAnalitikConfig', ...cfg });
+    $('#analitik-config-status').textContent = '✓ Tersimpan di Google Sheets (sheet Analitik_Config)';
+    toast('Formula tersimpan di Google Sheets ✓');
+  }catch(e){
+    $('#analitik-config-status').textContent = '✗ Gagal sinkron ke Google Sheets: '+e.message+' (tersimpan lokal saja)';
+    toast('Gagal simpan ke Sheets: '+e.message, true);
+  }
   try{ if(typeof renderHomeSmartResume === 'function') renderHomeSmartResume(); }catch(e){}
 });
 
@@ -13901,7 +14152,8 @@ function expertFinderStats(entriesSubset){
   const registeredNames = new Set(PERSONIL.map(p=>p['Nama Personil']).filter(Boolean));
   const stats = {};
   entriesSubset.forEach(e=>{
-    const names = splitPelaporNames(e['Nama Pelapor']).filter(n=> registeredNames.has(n));
+    // PATCHED: hitung juga personil tambahan (tim), dan exclude Preventive dari breakdown
+    const names = ((typeof getAllPersonilFromEntry==='function') ? getAllPersonilFromEntry(e) : splitPelaporNames(e['Nama Pelapor'])).filter(n=> registeredNames.has(n));
     const isDone = String(e['Status']||'').toLowerCase().includes('selesai');
     const isBreakdown = anIsBreakdown(e);
     const d = new Date(e['Tanggal']);
@@ -14643,8 +14895,13 @@ function renderDashboardView(){
   const pmMap = latestPmStatusPerMachine();
   holder.innerHTML = machines.map(m=>{
     const e = latestMap[m.nama];
-    const logKey = e ? dashStatusKey(e['Status']) : 'none';
+    let logKey = e ? dashStatusKey(e['Status']) : 'none';
     const logTs = e ? new Date(e['Timestamp Input']).getTime() : -Infinity;
+    // PATCHED: Preventive Maintenance tidak dianggap kerusakan/masalah
+    if(e && String(e['Jenis Pekerjaan']||'').toLowerCase().includes('preventive')){
+      // Preventive yang Selesai = normal, Proses = normal (kerja terencana, bukan gangguan)
+      if(logKey==='perhatian' || logKey==='kritikal') logKey='normal';
+    }
     const pm = pmMap[m.nama];
     const pmKey = pm ? pmSeverityKey(pm.severity) : 'none';
     const pmTs = pm ? Number(pm.ts) || -Infinity : -Infinity;
@@ -14841,7 +15098,7 @@ function openDetail(id){
   const atts = parseAttachments(e['Lampiran (JSON)']);
   const mesinKey = e['Kode Mesin'] || e['Nama Mesin'];
   const mesinLabel = [e['Kode Mesin'], e['Nama Mesin']].filter(Boolean).join(' — ');
-  const pelaporHtml = splitPelaporNames(e['Nama Pelapor']).map(n=> wikiLinkHtml('personil', n, n)).join(', ');
+  const pelaporHtml = ((typeof getAllPersonilFromEntry==='function') ? getAllPersonilFromEntry(e) : splitPelaporNames(e['Nama Pelapor'])).map(n=> wikiLinkHtml('personil', n, n)).join(', ');
   const materialHtml = parseSparepartDetail(e).filter(d=>d.nama).map(d=> wikiLinkHtml('sparepart', d.nama, d.nama + (d.qty>1 ? ` (${d.qty} pcs)` : ''))).join(', ');
   // Baris yang isinya nama entitas (mesin/personil/sparepart) dirender manual
   // memakai wikiLinkHtml supaya bisa diklik ke Maintenance Wikipedia; baris
@@ -14851,6 +15108,9 @@ function openDetail(id){
     'Kode / Nama Mesin': mesinKey ? wikiLinkHtml('mesin', mesinKey, mesinLabel) : '',
     'Nama Material': materialHtml
   };
+    const allPersonil = (typeof getAllPersonilFromEntry === 'function') ? getAllPersonilFromEntry(e) : splitPelaporNames(e['Nama Pelapor']);
+  const pelaporDisplay = allPersonil.map(n=> wikiLinkHtml('personil', n, n)).join(', ');
+  const isPreventive = String(e['Jenis Pekerjaan']||'').toLowerCase().includes('preventive') || String(e['Is Preventive']||'').toUpperCase()==='TRUE';
   const rows = [
     ['ID', e['ID']],
     ['Tanggal', fmtDate(e['Tanggal'])],
@@ -14858,7 +15118,11 @@ function openDetail(id){
     ['Shift', e['Shift']],
     ['Grouping Pekerjaan', e['Grouping Pekerjaan']],
     ['Grouping Team', e['Grouping Team']],
-    ['Nama Pelapor', e['Nama Pelapor']],
+    ['Nama Pelapor / Tim', pelaporDisplay || e['Nama Pelapor']],
+    ['Personil Tambahan', e['Personil Tambahan']||''],
+    ['Semua Personil', e['Semua Personil']||''],
+    ['Jenis Pekerjaan', e['Jenis Pekerjaan'] + (isPreventive ? ' (Bukan Kerusakan - Preventive)' : '')],
+    ['Kategori', isPreventive ? 'Preventive Maintenance - Tidak dihitung sebagai breakdown' : 'Corrective / Breakdown'], 
     ['Nomor Notifikasi Pekerjaan', e['Nomor Notifikasi Pekerjaan']],
     ['Kode / Nama Mesin', mesinLabel],
     ['Nama Unit (Sub-Mesin)', e['Nama Unit']],
@@ -15539,6 +15803,21 @@ $('#form-entry').addEventListener('submit', async (ev)=>{
       String(m['Nama Mesin']||'').trim() === entry.namaMesin
     );
     entry.lokasi = selectedMachine ? String(selectedMachine['Lokasi/Area']||'').trim() : '';
+    // Personil tambahan (opsional, tidak wajib) - PATCHED
+    const additionalNames = (typeof getAdditionalPersonilNames === 'function') ? getAdditionalPersonilNames() : [];
+    entry.personilTambahan = additionalNames; // array
+    entry.personilTambahanStr = additionalNames.join(', '); // string untuk sheet
+    entry.semuaPersonil = [entry.namaPelapor, ...additionalNames].filter(Boolean).join(', ');
+    
+    // Jika jenis pekerjaan Preventive Maintenance, tandai sebagai bukan kerusakan
+    const jenisLower = String(entry.jenisPekerjaan||'').toLowerCase();
+    entry.isPreventive = jenisLower.includes('preventive');
+    if(entry.isPreventive){
+      // Preventive tidak dianggap masalah/kerusakan, jadi deskripsi masalah bisa diisi checklist PM
+      // Tetap simpan, tapi flag ini dipakai di analitik untuk exclude dari breakdown count
+      entry.kategoriKerusakan = 'Preventive (Bukan Kerusakan)';
+    }
+
     // Sparepart opsional — tidak ada validasi wajib isi sparepart di sini
     // maupun di langkah-langkah wizard sebelumnya (baris dengan qty
     // kosong/0 otomatis dianggap tidak dipakai dan dilewati).
@@ -15566,6 +15845,7 @@ $('#form-entry').addEventListener('submit', async (ev)=>{
     PENDING_FILES = [];
     renderFilePreviews();
     resetSparepartRows();
+    if(typeof resetAdditionalPersonil === 'function') resetAdditionalPersonil();
     // Penyimpanan sudah sukses; refresh seluruh modul berjalan di background
     // agar satu endpoint lambat tidak mengunci tombol/form tanpa batas.
     loadAll().catch(()=>{});
@@ -17083,21 +17363,21 @@ if(btnSavePatrolCategoryConfig) btnSavePatrolCategoryConfig.addEventListener('cl
     cfg[cb.dataset.kategori] = cb.checked;
   });
   savePatrolCategoryConfigLocal(cfg);
-  // Buang kategori kosong-nama sisa & pastikan tiap kategori item-nya array bersih (tanpa baris kosong).
   Object.keys(PATROL_GENERAL_CHECKLIST).forEach(k=>{
     PATROL_GENERAL_CHECKLIST[k] = (PATROL_GENERAL_CHECKLIST[k]||[]).map(s=>String(s).trim()).filter(Boolean);
   });
   savePatrolGeneralChecklistLocal(PATROL_GENERAL_CHECKLIST);
-  $('#patrol-category-config-status').textContent = 'Tersimpan lokal...';
+  $('#patrol-category-config-status').textContent = 'Menyimpan ke Google Sheets...';
   try{
     await apiPost({ action:'savePatrolCategoryConfig', categories: cfg });
     await apiPost({ action:'savePatrolGeneralChecklist', items: PATROL_GENERAL_CHECKLIST });
-    $('#patrol-category-config-status').textContent = 'Tersimpan & tersinkron ✓';
+    $('#patrol-category-config-status').textContent = '✓ Tersimpan di Google Sheets (sheets Patrol_Category_Config & Patrol_General_Checklist)';
+    toast('Kategori Patrol tersimpan di Google Sheets ✓');
   }catch(e){
-    $('#patrol-category-config-status').textContent = 'Tersimpan lokal (gagal sinkron ke server)';
+    $('#patrol-category-config-status').textContent = '✗ Gagal sinkron ke Google Sheets: '+e.message;
+    toast('Gagal simpan ke Sheets: '+e.message, true);
   }
   renderPatrolCategoryConfigForm();
-  toast('Pengaturan kategori & item General Checking disimpan.');
 });
 
 const PATROL_STATUS_OPTS = [
@@ -18495,21 +18775,26 @@ async function exportProjectXlsx(id){
       gate.style.opacity = '0';
       setTimeout(()=>{ gate.style.display = 'none'; }, 380);
       appRoot.classList.add('unlocked');
-      // Setelah login berhasil, selalu masuk ke halaman Home (dashboard) —
-      // bukan Input Logbook — dengan status mesin, sapaan, tanggal,
-      // perhatian kritis & toolbar sudah dirender.
+      // PATCHED v2.1: Setelah login, langsung paksa Home + loadAll + render
       if(typeof switchToView === 'function'){ switchToView('dashboard'); }
-      // loadAll() awal (dipicu saat halaman baru dibuka) bisa saja belum
-      // selesai di titik ini kalau prosesnya lebih lambat dari login —
-      // pastikan Home dirender ULANG begitu data mesin/logbook benar-benar
-      // sudah ada, supaya cards status mesin langsung tampil tanpa perlu
-      // pindah menu dulu.
-      INITIAL_LOAD_PROMISE = loadAll();
-      Promise.resolve(INITIAL_LOAD_PROMISE).then(()=>{
-        if(document.getElementById('view-dashboard').classList.contains('active') && typeof renderDashboardView === 'function'){
+      // Tampilkan skeleton loading dulu biar user tau lagi muat
+      const dashView = document.getElementById('view-dashboard');
+      if(dashView){
+        const loadingEl = dashView.querySelector('#dashboard-main-content') || dashView;
+        // jangan timpa kalau sudah ada konten
+      }
+      try{
+        INITIAL_LOAD_PROMISE = loadAll();
+        await INITIAL_LOAD_PROMISE;
+        // Pastikan render 2x untuk jaminan data muncul tanpa pindah halaman
+        if(typeof renderDashboardView === 'function'){
           renderDashboardView();
+          setTimeout(()=>{ try{ renderDashboardView(); }catch(e){} }, 600);
         }
-      });
+      }catch(e){
+        console.warn('[OMODOS] loadAll after login error', e);
+        toast('Login berhasil, tapi data Home agak lambat: '+e.message, true);
+      }
     }catch(err){
       errEl.textContent = err.message || 'Gagal menghubungi server. Periksa koneksi internet Anda.';
     }finally{
@@ -19138,7 +19423,13 @@ document.addEventListener('dragstart', (ev)=>{
   $('#cnt-report-hub') && ($('#cnt-report-hub').textContent = GENERAL_REPORTS.length);
   if(WEB_APP_URL && CURRENT_USER && SESSION_TOKEN){
     INITIAL_LOAD_PROMISE = loadAll();
-    INITIAL_LOAD_PROMISE.then(()=> restoreFormEntryDraft());
+    INITIAL_LOAD_PROMISE.then(()=> {
+      restoreFormEntryDraft();
+      // PATCHED: render Home langsung setelah restore, tidak perlu pindah menu
+      if(typeof renderDashboardView==='function' && document.getElementById('view-dashboard').classList.contains('active')){
+        try{ renderDashboardView(); }catch(e){}
+      }
+    });
     // [FIX] Jaring pengaman: pastikan Home (dashboard + Smart Resume) DIRENDER
     // ULANG begitu loadAll() sungguhan ini selesai, khusus untuk jalur restore
     // sesi dari cache (sebelumnya tidak ada render ulang sama sekali di sini,
@@ -24936,6 +25227,64 @@ if(typeof window.goToView === 'function' && !window.goToView.__tabsWrapped){
 }
 
 })();
+
+/* ===== PATCHED: Setting Tabs Logic ===== */
+(function(){
+  const LS_SETTING_TAB_KEY = 'omodos_setting_last_tab';
+  function switchSettingTab(tabName){
+    const tabs = document.querySelectorAll('.setting-tab-btn');
+    const panels = document.querySelectorAll('.setting-tab-panel');
+    tabs.forEach(b=> b.classList.toggle('active', b.dataset.tab===tabName));
+    panels.forEach(p=> p.classList.toggle('active', p.id==='setting-tab-panel-'+tabName));
+    try{ localStorage.setItem(LS_SETTING_TAB_KEY, tabName); }catch(e){}
+    // auto scroll tab into view
+    const activeBtn = document.querySelector(`.setting-tab-btn[data-tab="${tabName}"]`);
+    if(activeBtn){ activeBtn.scrollIntoView({behavior:'smooth', block:'nearest', inline:'center'}); }
+    // trigger lazy render for tables that need visible DOM
+    if(tabName==='mesin' && typeof renderMachineTable==='function'){ try{ renderMachineTable(); }catch(e){} if(typeof populatePctMachineSelect==='function'){ try{ populatePctMachineSelect(); }catch(e){} } }
+    if(tabName==='patrol-template' && typeof renderPctTable==='function'){ try{ renderPctTable(); }catch(e){} }
+    if(tabName==='patrol-kategori' && typeof renderPatrolCategoryConfigForm==='function'){ try{ renderPatrolCategoryConfigForm(); }catch(e){} }
+    if(tabName==='personil' && typeof renderPersonilTable==='function'){ try{ renderPersonilTable(); }catch(e){} }
+    // sparepart master sudah pindah ke view-sparepart
+    if(tabName==='users'){
+      const emptyHint = document.getElementById('rbac-empty-hint');
+      if(emptyHint){
+        const hasContent = document.getElementById('rbac-admin-section') && document.getElementById('rbac-admin-section').innerHTML.trim().length>50;
+        emptyHint.style.display = hasContent ? 'none' : 'block';
+      }
+    }
+  }
+  // delegate click
+  document.addEventListener('click', function(e){
+    const btn = e.target.closest('.setting-tab-btn');
+    if(btn && btn.dataset.tab){
+      switchSettingTab(btn.dataset.tab);
+    }
+  });
+  // expose globally
+  window.switchSettingTab = switchSettingTab;
+  // on view switch to setting, restore last tab
+  const origSwitchToView = window.switchToView;
+  window.switchToView = function(view){
+    if(typeof origSwitchToView==='function') origSwitchToView(view);
+    if(view==='setting'){
+      let last = 'koneksi';
+      try{ last = localStorage.getItem(LS_SETTING_TAB_KEY) || 'koneksi'; }catch(e){}
+      // small delay biar DOM view-setting sudah active
+      setTimeout(()=> switchSettingTab(last), 60);
+    }
+  };
+  // init on load if already in setting view
+  document.addEventListener('DOMContentLoaded', ()=>{
+    const settingView = document.getElementById('view-setting');
+    if(settingView && settingView.classList.contains('active')){
+      let last = 'koneksi';
+      try{ last = localStorage.getItem(LS_SETTING_TAB_KEY) || 'koneksi'; }catch(e){}
+      switchSettingTab(last);
+    }
+  });
+})();
+
 </script>
 
 </body>
