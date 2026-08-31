@@ -12944,20 +12944,14 @@ function sparepartEntryTotalQty(e){
    Sumber data collection: SELALU dari ENTRIES (Logbook) — modul ini
    TIDAK PERNAH membuat record pemakaian sparepart sendiri. ID entri
    logbook dipakai apa adanya sebagai relational key ke SPAREPART_STATUS. */
-// [FITUR BARU] Menu Sparepart (dashboard, tabel pengambilan, & grafik periodik)
-// HANYA menampilkan data pengambilan sparepart dari Logbook mulai 1 September
-// 2026 ke atas. Entry Logbook sebelum tanggal ini tetap ada & tetap dihitung
-// normal di menu lain (Logbook, Insights, dsb) -- pembatasan ini KHUSUS untuk
-// tampilan menu Sparepart saja, tidak menghapus/mengubah data aslinya.
-const SPAREPART_COLLECT_CUTOFF_TS = new Date('2026-09-01T00:00:00').getTime();
+// Menu Sparepart menampilkan seluruh data pengambilan valid dari Logbook,
+// tanpa cutoff tersembunyi yang membuat data di Sheets hilang dari frontend.
 function sparepartRows(){
   return ENTRIES
     .filter(e => {
       const nama = String(e['Nama Material'] ?? '').trim();
       const sap = String(e['Material Number SAP'] ?? '').trim();
-      if(nama === '' && sap === '') return false;
-      const ts = sparepartEntryTime(e);
-      return !isNaN(ts) && ts >= SPAREPART_COLLECT_CUTOFF_TS;
+      return nama !== '' || sap !== '';
     })
     .map(e=>({ entry:e, sap: getSparepartSapEntry(e['ID']) }))
     // Laporan terbaru di atas. "Timestamp Input" (ISO string, diisi otomatis
@@ -16806,6 +16800,13 @@ async function syncPmReportsFromBackend(){
         // atau string/array nama file lama — parseAttachments() menormalkan keduanya supaya foto/video
         // tetap bisa ditampilkan sebagai gambar/video asli, sama seperti Lampiran Logbook.
         files: parseAttachments(r.files || r['Lampiran (JSON)'] || r.Files || []),
+        patrolMode: String(r.patrolMode ?? r['Patrol Mode'] ?? '').toLowerCase()==='true' ||
+          String(r.patrolMode ?? r['Patrol Mode'] ?? '')==='1' ||
+          /^patrol harian/i.test(String(r.titikInspeksi || r['Titik Inspeksi'] || '')),
+        checklist: safeJsonParseClient_(r.checklist || r['Checklist (JSON)'], {}),
+        counts: safeJsonParseClient_(r.counts || r['Counts (JSON)'], {}),
+        score: patrolScoreFromBackend_(r),
+        findings: safeJsonParseClient_(r.findings || r['Findings (JSON)'], [])
       }));
       // Jangan menimpa lampiran lokal (yang sudah berisi dataUrl siap tampil) dengan
       // data backend yang lebih "miskin" (mis. cuma nama file) kalau belum ada URL asli.
@@ -16813,14 +16814,32 @@ async function syncPmReportsFromBackend(){
       const merged = normalized.map(r=>{
         const local = localList.find(x=>x.id===r.id);
         const backendHasRealMedia = r.files.some(a=> a.viewUrl && a.viewUrl.startsWith('http'));
-        if(!backendHasRealMedia && local && local.files && local.files.length) return { ...r, files: local.files };
-        return r;
+        if(!local) return r;
+        return {
+          ...r,
+          files: !backendHasRealMedia && local.files && local.files.length ? local.files : r.files,
+          checklist: Object.keys(r.checklist||{}).length ? r.checklist : (local.checklist||{}),
+          counts: Object.keys(r.counts||{}).length ? r.counts : (local.counts||{}),
+          findings: Array.isArray(r.findings) && r.findings.length ? r.findings : (local.findings||[]),
+          score: r.score || local.score || 0,
+          patrolMode: r.patrolMode || local.patrolMode || false
+        };
       });
       savePmReportsLocal(merged);
       return merged;
     }
   }catch(e){ /* action 'predictiveReports' mungkin belum tersedia di backend; pakai cache lokal */ }
   return loadPmReportsLocal();
+}
+function safeJsonParseClient_(value, fallback){
+  if(value && typeof value === 'object') return value;
+  try{ return value ? JSON.parse(value) : fallback; }catch(e){ return fallback; }
+}
+function patrolScoreFromBackend_(row){
+  const direct = row.score ?? row.Score;
+  if(direct !== undefined && direct !== null && direct !== '' && isFinite(Number(direct))) return Number(direct);
+  const match = String(row.rekomendasi || row.Rekomendasi || '').match(/score\s*:\s*(\d+)/i);
+  return match ? Number(match[1]) : 0;
 }
 async function persistPmReport(report, files){
   const list = loadPmReportsLocal();
