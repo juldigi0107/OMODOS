@@ -6487,7 +6487,7 @@ function restoreFormEntryDraft(){
       if(ADDITIONAL_PERSONIL_ROWS.length){
         ADDITIONAL_PERSONIL_ID = Math.max(0, ...ADDITIONAL_PERSONIL_ROWS.map(r=>r.id||0));
       }
-      renderAdditionalPersonil();
+      if(typeof renderAdditionalPersonil==='function') renderAdditionalPersonil();
     }
     if(typeof computeEstimasi === 'function') computeEstimasi();
   }finally{
@@ -7221,19 +7221,11 @@ async function loadAll(){
    Nama pelapor bisa berisi lebih dari satu nama yang dipisahkan
    garis miring "/", misal: "Dede Jumadi/Dwi Sugeng Kurniawan/Nur Wahyudi".
    Fungsi ini memecahnya menjadi array nama individu yang sudah di-trim. */
-
-
-let ADDITIONAL_PERSONIL_ROWS = [];
-let ADDITIONAL_PERSONIL_ID = 0;
-function getPersonilOptionsHtml(selectedValue){
-  const names = PERSONIL.map(p=>p['Nama Personil']).filter(Boolean).sort();
-  let html = '<option value="">Pilih personil...</option>';
-  names.forEach(n=>{
-    const sel = n===selectedValue ? ' selected' : '';
-    html += '<option value="' + escapeHtml(n) + '"' + sel + '>' + escapeHtml(n) + '</option>';
-  });
-  return html;
+function splitPelaporNames(str){
+  if(!str) return ['Tanpa Nama'];
+  return String(str).split(/[\/\-&]+/,).map(s=>s.trim()).filter(Boolean);
 }
+
 function populatePelaporSelect(){
   const names = PERSONIL.map(p=>p['Nama Personil']).filter(Boolean).sort();
   const optionsHtml = '<option value="">Pilih personil...</option>' + names.map(n=>'<option>' + escapeHtml(n) + '</option>').join('');
@@ -7244,60 +7236,8 @@ function populatePelaporSelect(){
     sel.innerHTML = optionsHtml;
     if(current && names.includes(current)) sel.value = current;
   });
-  renderAdditionalPersonil();
+  if(typeof renderAdditionalPersonil==='function') renderAdditionalPersonil();
 }
-function renderAdditionalPersonil(){
-  const container = document.getElementById('additional-personil-container');
-  if(!container) return;
-  if(!ADDITIONAL_PERSONIL_ROWS.length){
-    container.innerHTML = '<div style="font-size:12px;color:var(--text-dim);padding:6px 0;">Belum ada personil tambahan.</div>';
-    return;
-  }
-  container.innerHTML = ADDITIONAL_PERSONIL_ROWS.map(row=>{
-    return '<div class="additional-personil-row" data-id="' + row.id + '" style="display:flex;gap:8px;align-items:center;">' +
-      '<select class="additional-personil-select" data-id="' + row.id + '" style="flex:1;">' + getPersonilOptionsHtml(row.nama) + '</select>' +
-      '<button type="button" class="btn btn-ghost btn-sm additional-personil-remove" data-id="' + row.id + '">X</button>' +
-      '</div>';
-  }).join('');
-  container.querySelectorAll('.additional-personil-select').forEach(sel=>{
-    sel.addEventListener('change', (e)=>{
-      const id = Number(e.target.dataset.id);
-      const r = ADDITIONAL_PERSONIL_ROWS.find(x=>x.id===id);
-      if(r) r.nama = e.target.value;
-      saveFormEntryDraftDebounced();
-    });
-  });
-  container.querySelectorAll('.additional-personil-remove').forEach(btn=>{
-    btn.addEventListener('click', (e)=>{
-      const id = Number(e.currentTarget.dataset.id);
-      ADDITIONAL_PERSONIL_ROWS = ADDITIONAL_PERSONIL_ROWS.filter(x=>x.id!==id);
-      renderAdditionalPersonil();
-      saveFormEntryDraftDebounced();
-    });
-  });
-}
-function addAdditionalPersonilRow(preselected){
-  ADDITIONAL_PERSONIL_ID++;
-  ADDITIONAL_PERSONIL_ROWS.push({id: ADDITIONAL_PERSONIL_ID, nama: preselected||''});
-  renderAdditionalPersonil();
-  saveFormEntryDraftDebounced();
-}
-function getAdditionalPersonilNames(){
-  return ADDITIONAL_PERSONIL_ROWS.map(r=>r.nama).filter(Boolean).map(s=>String(s).trim()).filter(Boolean);
-}
-function resetAdditionalPersonil(){
-  ADDITIONAL_PERSONIL_ROWS = [];
-  ADDITIONAL_PERSONIL_ID = 0;
-  renderAdditionalPersonil();
-}
-
-function getAllPersonilFromEntry(e){
-  const utama = e['Nama Pelapor']||'';
-  const tambahan = e['Personil Tambahan']|| e['personilTambahanStr']|| e['Tim Pelaksana']||'';
-  const combined = [utama, tambahan].filter(Boolean).join(', ');
-  return splitPelaporNames(combined);
-}
-
 
 const MACHINE_LAINNYA_VALUE = '__lainnya__';
 // Kode Mesin & Nama Mesin pada form Input Logbook sekarang murni bersumber
@@ -15758,9 +15698,6 @@ $('#form-entry').addEventListener('submit', async (ev)=>{
     entry.semuaPersonil = [entry.namaPelapor, ...additionalNames].filter(Boolean).join(', ');
     const jenisLower = String(entry.jenisPekerjaan||'').toLowerCase();
     entry.isPreventive = jenisLower.includes('preventive');
-    if(entry.isPreventive){
-      entry.kategoriKerusakan = 'Preventive (Bukan Kerusakan)';
-    }
     const sparepartFields = buildMaterialFieldsFromRows();
     entry.namaMaterial = sparepartFields.namaMaterial;
     entry.materialNumberSAP = sparepartFields.materialNumberSAP;
@@ -25226,7 +25163,6 @@ if(typeof window.goToView === 'function' && !window.goToView.__tabsWrapped){
 })();
 
 
-// SAFE BINDING for additional personil button - after all functions defined
 (function(){
   function bindAddPersonilBtn(){
     const btn = document.getElementById('btn-add-personil-tambahan');
