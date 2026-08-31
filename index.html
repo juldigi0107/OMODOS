@@ -15333,6 +15333,53 @@ resetSparepartRows();
 const btnAddSparepartRow = $('#btn-add-sparepart-row');
 if(btnAddSparepartRow) btnAddSparepartRow.addEventListener('click', addSparepartRow);
 
+/* ---------------- PERSONIL TAMBAHAN (INPUT LOGBOOK) ----------------
+   Baris opsional untuk menambahkan personil lain selain Nama Pelapor /
+   Teknisi Utama. Polanya disamakan dengan SPAREPART ROWS di atas supaya
+   konsisten: array state + render ulang ke dalam container setiap ada
+   perubahan (tambah/hapus/pilih nama). */
+let ADDITIONAL_PERSONIL_ID = 0;
+let ADDITIONAL_PERSONIL_ROWS = [];
+function addAdditionalPersonilRow(){
+  ADDITIONAL_PERSONIL_ROWS.push({ id: ++ADDITIONAL_PERSONIL_ID, nama:'' });
+  renderAdditionalPersonil();
+}
+function removeAdditionalPersonilRow(id){
+  ADDITIONAL_PERSONIL_ROWS = ADDITIONAL_PERSONIL_ROWS.filter(r=>r.id!==id);
+  renderAdditionalPersonil();
+}
+function renderAdditionalPersonil(){
+  const holder = $('#additional-personil-container');
+  if(!holder) return;
+  const mainName = ($('#select-namaPelapor') && $('#select-namaPelapor').value) || '';
+  const names = (typeof PERSONIL !== 'undefined' ? PERSONIL : [])
+    .map(p=>p['Nama Personil']).filter(Boolean).sort();
+  holder.innerHTML = ADDITIONAL_PERSONIL_ROWS.map(r=>`
+    <div class="additional-personil-row" data-id="${r.id}" style="display:flex; gap:8px; align-items:center;">
+      <select class="ap-nama" style="flex:1;">
+        <option value="">Pilih personil...</option>
+        ${names.map(n=>`<option value="${escapeHtml(n)}" ${r.nama===n?'selected':''} ${n===mainName?'disabled':''}>${escapeHtml(n)}</option>`).join('')}
+      </select>
+      <button type="button" class="btn btn-ghost btn-sm additional-personil-remove" data-id="${r.id}"><i class="ph-bold ph-trash"></i></button>
+    </div>`).join('');
+  $$('.ap-nama', holder).forEach(el=> el.addEventListener('change', ()=>{
+    const id = Number(el.closest('.additional-personil-row').dataset.id);
+    const row = ADDITIONAL_PERSONIL_ROWS.find(r=>r.id===id);
+    if(row) row.nama = el.value;
+  }));
+  $$('.additional-personil-remove', holder).forEach(btn=>{
+    btn.addEventListener('click', ()=> removeAdditionalPersonilRow(Number(btn.dataset.id)));
+  });
+}
+function getAdditionalPersonilNames(){
+  return ADDITIONAL_PERSONIL_ROWS.map(r=>r.nama).filter(Boolean);
+}
+function resetAdditionalPersonil(){
+  ADDITIONAL_PERSONIL_ROWS = [];
+  renderAdditionalPersonil();
+}
+resetAdditionalPersonil();
+
 /* ---------------- [FITUR BARU] PERBAIKAN TYPO/EJAAN LOGBOOK VIA GROQ ----------------
    Berbeda dari AI Copilot (yang 100% lokal, tanpa API eksternal), fitur ini
    MEMANG butuh koneksi internet + backend, karena tugasnya (memahami &
