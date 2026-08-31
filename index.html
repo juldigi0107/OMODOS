@@ -7197,6 +7197,17 @@ async function loadAll(){
       }
     }catch(e){}
     try{ if(!PATROL_TEMPLATE || !PATROL_TEMPLATE.length){ PATROL_TEMPLATE = await apiGet('patrolChecklistTemplate'); } }catch(e){ PATROL_TEMPLATE = PATROL_TEMPLATE||[]; }
+    // [PERF FIX] Home/bootstrap sekarang cuma mengirim entri Logbook >= SOT
+    // supaya cepat tampil. Histori PENUH (termasuk data historis OneNote
+    // sebelum SOT_CUTOFF_DATE, dipakai fitur pembanding historis seperti
+    // Expert Finder/Machine Wikipedia) dimuat lazy di sini di background,
+    // lalu digabung ke ENTRIES tanpa memblokir Home.
+    try{
+      const fullEntries = await apiGet('list');
+      if(Array.isArray(fullEntries) && fullEntries.length){
+        ENTRIES = fullEntries.sort((a,b)=> new Date(b['Timestamp Input']) - new Date(a['Timestamp Input']));
+      }
+    }catch(e){}
     try{ await syncPmReportsFromBackend(); }catch(e){}
     try{ await syncSparepartLokasiFromBackend(); }catch(e){}
     try{ await syncSparepartStatusFromBackend(); }catch(e){}
@@ -13120,7 +13131,7 @@ function sparepartEntryTotalQty(e){
 // Menu Sparepart menampilkan seluruh data pengambilan valid dari Logbook,
 // tanpa cutoff tersembunyi yang membuat data di Sheets hilang dari frontend.
 function sparepartRows(){
-  return ENTRIES
+  return sotEntries(ENTRIES)
     .filter(e => {
       const nama = String(e['Nama Material'] ?? '').trim();
       const sap = String(e['Material Number SAP'] ?? '').trim();
@@ -13174,6 +13185,13 @@ function renderSparepartView(){
   syncSparepartOpnameFromBackend().then(()=>{
     renderSparepartOpnameList(); renderSparepartTargetBanner(); renderSparepartOpnameDash(); renderSparepartOpnameChecklist();
   });
+
+  // Tab "Master Sparepart" (Lokasi/Harga/Stock) sebelumnya HANYA dirender
+  // saat masuk menu Setting, sehingga tab ini tampak kosong/lama muncul
+  // kalau user belum pernah membuka Setting di sesi tsb. Render dulu dari
+  // cache lokal (instan), lalu sinkron ke backend & render ulang.
+  renderSparepartLokasiTable();
+  syncSparepartLokasiFromBackend().then(()=> renderSparepartLokasiTable());
 }
 
 let SPAREPART_PERIODIK_CHART = null;
@@ -14994,12 +15012,14 @@ function openDetail(id){
   const mesinKey = e['Kode Mesin'] || e['Nama Mesin'];
   const mesinLabel = [e['Kode Mesin'], e['Nama Mesin']].filter(Boolean).join(' — ');
   const pelaporHtml = splitPelaporNames(e['Nama Pelapor']).map(n=> wikiLinkHtml('personil', n, n)).join(', ');
+  const personilTambahanHtml = String(e['Personil Tambahan']||'').split(',').map(s=>s.trim()).filter(Boolean).map(n=> wikiLinkHtml('personil', n, n)).join(', ');
   const materialHtml = parseSparepartDetail(e).filter(d=>d.nama).map(d=> wikiLinkHtml('sparepart', d.nama, d.nama + (d.qty>1 ? ` (${d.qty} pcs)` : ''))).join(', ');
   // Baris yang isinya nama entitas (mesin/personil/sparepart) dirender manual
   // memakai wikiLinkHtml supaya bisa diklik ke Maintenance Wikipedia; baris
   // lain tetap memakai escapeHtml biasa seperti sebelumnya.
   const customRowHtml = {
     'Nama Pelapor': pelaporHtml,
+    'Personil Tambahan': personilTambahanHtml,
     'Kode / Nama Mesin': mesinKey ? wikiLinkHtml('mesin', mesinKey, mesinLabel) : '',
     'Nama Material': materialHtml
   };
@@ -15011,6 +15031,7 @@ function openDetail(id){
     ['Grouping Pekerjaan', e['Grouping Pekerjaan']],
     ['Grouping Team', e['Grouping Team']],
     ['Nama Pelapor', e['Nama Pelapor']],
+    ['Personil Tambahan', e['Personil Tambahan']],
     ['Nomor Notifikasi Pekerjaan', e['Nomor Notifikasi Pekerjaan']],
     ['Kode / Nama Mesin', mesinLabel],
     ['Nama Unit (Sub-Mesin)', e['Nama Unit']],
