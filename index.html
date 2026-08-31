@@ -6481,12 +6481,21 @@ async function parseApiResponse_(res){
     throw new Error('Respons backend bukan JSON yang valid. HTTP ' + res.status + '.');
   }
 }
+async function fetchWithTimeout_(url, options={}, timeoutMs=15000){
+  const controller = new AbortController();
+  const timer = setTimeout(()=>controller.abort(), timeoutMs);
+  try{ return await fetch(url, {...options, signal:controller.signal}); }
+  catch(err){
+    if(err && err.name==='AbortError') throw new Error('Backend timeout setelah '+Math.round(timeoutMs/1000)+' detik.');
+    throw err;
+  }finally{ clearTimeout(timer); }
+}
 async function apiGet(action, params={}){
   if(!WEB_APP_URL){ throw new Error('NO_URL'); }
   if(!SESSION_TOKEN){ throw new Error('AUTH_REQUIRED'); }
   const requestToken = (SETTING_AUTH_OK && SETTING_SESSION_TOKEN) ? SETTING_SESSION_TOKEN : SESSION_TOKEN;
   const qs = new URLSearchParams({action, ...params, sessionToken:requestToken}).toString();
-  const res = await fetch(WEB_APP_URL + '?' + qs);
+  const res = await fetchWithTimeout_(WEB_APP_URL + '?' + qs, {}, 15000);
   const json = await parseApiResponse_(res);
   if(!json.ok){
     if(/AUTH_REQUIRED|SESSION_INVALID|SESSION_EXPIRED|ACCOUNT_INACTIVE/.test(json.error || '')) logoutUser();
@@ -6501,11 +6510,11 @@ async function apiPost(payload){
   const securedPayload = payload.action === 'login' ? payload : {...payload, sessionToken:requestToken};
   try{
     // text/plain menghindari CORS preflight ke Apps Script
-    const res = await fetch(WEB_APP_URL, {
+    const res = await fetchWithTimeout_(WEB_APP_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: JSON.stringify(securedPayload)
-    });
+    }, 30000);
     const json = await parseApiResponse_(res);
     if(!json.ok){
       if(/AUTH_REQUIRED|SESSION_INVALID|SESSION_EXPIRED|ACCOUNT_INACTIVE/.test(json.error || '')) logoutUser();
@@ -15542,7 +15551,9 @@ $('#form-entry').addEventListener('submit', async (ev)=>{
     PENDING_FILES = [];
     renderFilePreviews();
     resetSparepartRows();
-    await loadAll();
+    // Penyimpanan sudah sukses; refresh seluruh modul berjalan di background
+    // agar satu endpoint lambat tidak mengunci tombol/form tanpa batas.
+    loadAll().catch(()=>{});
     toggleMachineLainnyaRow();
   }catch(err){
     toast('Gagal menyimpan: ' + err.message, true);
