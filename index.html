@@ -1930,7 +1930,21 @@ input[type="number"]{-moz-appearance:textfield;}
   display:none;
 }
 
-@media(max-width:900px){
+/* [FIX] Sidebar HANYA untuk desktop (mouse + layar lebar). Tablet & HP --
+   termasuk saat diputar ke landscape, walau lebarnya bisa melebihi 900px
+   (mis. iPad landscape ~1024-1180px) -- tetap harus pakai tata letak
+   mobile: sidebar jadi drawer tersembunyi (dibuka lewat tombol hamburger)
+   dan bottom-nav TETAP terlihat di bawah. Sebelumnya breakpoint ini murni
+   berbasis LEBAR layar (max-width:900px) -- di tablet landscape yang
+   lebarnya sering > 900px, ini membuat aplikasi salah mengira perangkat
+   sebagai "desktop" dan menampilkan sidebar kolom permanen tanpa
+   bottom-nav. Sekarang breakpoint ini JUGA berlaku untuk perangkat sentuh
+   (pointer:coarse) di lebar berapa pun, memakai OR lewat koma di
+   @media -- jadi tablet/HP (portrait ATAUPUN landscape) selalu dapat
+   tata letak mobile, sementara desktop asli (mouse, pointer:fine) yang
+   window-nya di-resize sempit tetap dapat perlakuan yang sama seperti
+   sebelumnya (tidak berubah). */
+@media(max-width:900px), (pointer:coarse){
   .app{grid-template-columns:1fr;}
   .sidebar{
     position:fixed;left:0;top:0;height:100vh;width:250px;
@@ -1997,17 +2011,28 @@ input[type="number"]{-moz-appearance:textfield;}
   .bottom-nav-btn.group-active{color:#ff6b76;}
   .bottom-nav-btn span.label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:56px;}
 }
-/* [FIX] Bottom nav disembunyikan total di mode landscape (HP diputar ke
-   samping) -- tinggi layar landscape sangat terbatas, bottom-nav yang fixed
-   di bawah cuma memakan ruang layar & menutupi konten tanpa memberi banyak
-   manfaat navigasi (sidebar drawer via hamburger tetap bisa dipakai). Hanya
-   muncul lagi saat kembali ke mode portrait. Padding bawah konten yang tadinya
-   dikasih ruang untuk bottom-nav juga dihapus di landscape supaya tidak ada
-   sisa ruang kosong percuma di bawah. */
-@media(max-width:900px) and (orientation:landscape){
-  .bottom-nav{ display:none !important; }
-  .main{ padding-bottom:18px; }
-  .app.dash-mode .main{ padding-bottom:18px; }
+/* [FIX] SEBELUMNYA bottom-nav disembunyikan total (display:none!important)
+   di mode landscape (HP/tablet diputar ke samping), dengan alasan tinggi
+   layar landscape terbatas. Ini JUSTRU BERTENTANGAN dengan kebutuhan
+   navigasi: di landscape, bottom-nav tetap harus terlihat & sidebar tetap
+   tidak boleh muncul (sidebar cuma untuk desktop). Sekarang landscape TIDAK
+   lagi menyembunyikan bottom-nav -- kalau tingginya sangat pendek (lihat
+   @media(max-height:...) di bawah), bottom-nav hanya dipadatkan (padding &
+   ukuran ikon diperkecil), bukan disembunyikan, supaya navigasi utama tetap
+   selalu bisa dijangkau di tablet/HP landscape. */
+@media(max-width:900px) and (orientation:landscape), (pointer:coarse) and (orientation:landscape){
+  .main{ padding-bottom:calc(64px + env(safe-area-inset-bottom,0px)); }
+  .app.dash-mode .main{ padding-bottom:calc(64px + env(safe-area-inset-bottom,0px)); }
+}
+/* Landscape DENGAN tinggi layar sangat terbatas (HP diputar ke samping,
+   tinggi < 480px): bottom-nav dipadatkan supaya tidak memakan proporsi
+   layar terlalu besar, tapi TETAP TERLIHAT (bukan disembunyikan). */
+@media(max-height:480px) and (orientation:landscape){
+  .bottom-nav{ padding:4px 3px calc(4px + env(safe-area-inset-bottom,0px)) 3px; }
+  .bottom-nav-btn{ font-size:7.5px;padding:2px; }
+  .bottom-nav-btn .ico{ font-size:14px; }
+  .main{ padding-bottom:calc(48px + env(safe-area-inset-bottom,0px)); }
+  .app.dash-mode .main{ padding-bottom:calc(48px + env(safe-area-inset-bottom,0px)); }
 }
 .bnav-sheet-bg{
   display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:120;
@@ -2235,6 +2260,31 @@ html[data-theme="red-black"] .omodos-logo{
 .login-box .omodos-tagline .c-blue{color:#00AEEF;}
 .login-box .omodos-tagline .c-pink{color:#EC008C;}
 .login-box .omodos-tagline .c-amber{color:#E0A400;}
+
+/* ---------------- APP SPLASH SCREEN ----------------
+   Ditampilkan setelah login berhasil, SEBELUM Home muncul, sambil seluruh
+   data aplikasi (loadAll) disiapkan di belakang layar. Tujuannya supaya
+   pengguna tidak melihat Home dalam kondisi kosong/setengah termuat. */
+#app-splash{
+  position:fixed; inset:0; z-index:9999;
+  display:none; align-items:center; justify-content:center;
+  background:#0d0f14;
+  opacity:0; transition:opacity 320ms ease;
+}
+#app-splash.show{ display:flex; }
+#app-splash.visible{ opacity:1; }
+.app-splash-box{ text-align:center; padding:20px; }
+.app-splash-box .omodos-logo{ width:72px; height:72px; margin:0 auto 18px auto; animation:appSplashPulse 1.8s ease-in-out infinite; }
+@keyframes appSplashPulse{0%,100%{transform:scale(1);opacity:1;}50%{transform:scale(1.06);opacity:.85;}}
+.app-splash-spinner{ font-size:22px; color:#00AEEF; margin-bottom:14px; }
+.app-splash-text{
+  font-family:var(--font-display, inherit); color:#fff; font-size:16px;
+  font-weight:700; letter-spacing:.4px; margin-bottom:8px;
+}
+.app-splash-sub{
+  font-family:var(--font-mono, inherit); color:#8b93a0; font-size:11.5px;
+  letter-spacing:.3px;
+}
 .omodos-divider{display:flex;align-items:center;gap:10px;margin:16px 0;}
 .omodos-divider span{flex:1;height:1px;background:rgba(0,0,0,.18);}
 .omodos-divider i{width:5px;height:5px;border-radius:50%;background:rgba(0,0,0,.35);flex-shrink:0;}
@@ -2773,8 +2823,16 @@ pre, code{ white-space:pre-wrap; word-break:break-word; overflow-wrap:anywhere; 
    mode mobile, bukan cuma satu tempat -- makanya ditandai "BUG KRITIS", bukan
    sekadar catatan kecil. Fix: beri batas bawah "min-width:901px" supaya rule
    tablet ini TIDAK PERNAH berlaku di rentang mobile (≤900px) yang sudah
-   ditangani terpisah oleh drawer/off-canvas sidebar. */
-@media(min-width:901px) and (max-width:1024px){
+   ditangani terpisah oleh drawer/off-canvas sidebar.
+   [FIX-2] "and (pointer:fine)" ditambahkan supaya rule sidebar-kolom-mini
+   di sini KHUSUS untuk jendela desktop/laptop (mouse) yang lebarnya
+   kebetulan ada di rentang 901-1024px. TANPA syarat ini, tablet sungguhan
+   (mis. iPad landscape/iPad Mini landscape yang lebarnya sering pas di
+   901-1024px) ikut kena rule ini karena muncul BELAKANGAN di cascade CSS
+   (menang atas rule sentuh/@media(pointer:coarse) di atas) -- akibatnya
+   sidebar kolom permanen tetap muncul & bottom-nav tetap hilang di tablet
+   landscape, padahal sidebar seharusnya HANYA untuk desktop. */
+@media(min-width:901px) and (max-width:1024px) and (pointer:fine){
   .app{ grid-template-columns:210px 1fr; }
   .main{ padding:24px 20px 100px 20px; }
   .grid3{ grid-template-columns:1fr 1fr; }
@@ -2886,6 +2944,23 @@ pre, code{ white-space:pre-wrap; word-break:break-word; overflow-wrap:anywhere; 
     </form>
     <div class="omodos-divider"><span></span><i></i><span></span></div>
     <div class="login-foot">PT BUKIT MURIA JAYA // Created by IDJ</div>
+  </div>
+</div>
+
+<div id="app-splash">
+  <div class="app-splash-box">
+    <div class="omodos-logo">
+      <svg class="omodos-logo-svg" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="50" cy="50" r="31" fill="#ffffff"/>
+        <circle cx="50" cy="50" r="38" fill="none" stroke="#111318" stroke-width="14" stroke-dasharray="96.16 46.42 96.16" transform="rotate(-90 50 50)"/>
+        <circle cx="50" cy="50" r="38" fill="none" stroke="#00AEEF" stroke-width="14" stroke-dasharray="15.47 223.29" stroke-dashoffset="-96.16" transform="rotate(-90 50 50)"/>
+        <circle cx="50" cy="50" r="38" fill="none" stroke="#EC008C" stroke-width="14" stroke-dasharray="15.47 223.29" stroke-dashoffset="-111.63" transform="rotate(-90 50 50)"/>
+        <circle cx="50" cy="50" r="38" fill="none" stroke="#FFC20E" stroke-width="14" stroke-dasharray="15.47 223.29" stroke-dashoffset="-127.10" transform="rotate(-90 50 50)"/>
+      </svg>
+    </div>
+    <div class="app-splash-spinner"><i class="ph-bold ph-circle-notch ph-spin"></i></div>
+    <div class="app-splash-text" id="app-splash-text">Menyiapkan Data...</div>
+    <div class="app-splash-sub">Mohon tunggu sebentar, seluruh data aplikasi sedang dimuat.</div>
   </div>
 </div>
 
@@ -6149,6 +6224,11 @@ async function handleSavePermissions_(){
   }catch(err){
     statusEl.textContent = '';
     toast(err.message || 'Gagal menyimpan perubahan akses.', true);
+    // [FIX] Lempar ulang error ini supaya pemanggil (mis. wrapper Low
+    // Cognitive Mode yang membungkus fungsi ini) TAHU penyimpanan akses
+    // utama gagal, dan tidak diam-diam melanjutkan langkah berikutnya
+    // seolah semuanya berhasil -- lihat penjelasan di wrappedSave.
+    throw err;
   }
 }
 
@@ -18715,30 +18795,42 @@ async function exportProjectXlsx(id){
       } else {
         renderStyleManager();
       }
-      gate.style.transition = 'opacity 380ms ease';
-      gate.style.opacity = '0';
-      setTimeout(()=>{ gate.style.display = 'none'; }, 380);
-      appRoot.classList.add('unlocked');
-      // PATCHED v2.1: Setelah login, langsung paksa Home + loadAll + render
-      if(typeof switchToView === 'function'){ switchToView('dashboard'); }
-      // Tampilkan skeleton loading dulu biar user tau lagi muat
-      const dashView = document.getElementById('view-dashboard');
-      if(dashView){
-        const loadingEl = dashView.querySelector('#dashboard-main-content') || dashView;
-        // jangan timpa kalau sudah ada konten
+      // [FIX] Splash screen "Menyiapkan Data...": jangan langsung buka Home
+      // begitu login sukses. login-gate disembunyikan LANGSUNG (tanpa fade,
+      // supaya tidak ada celah user melihat Home kosong di baliknya), lalu
+      // splash tampil menutupi layar SAMBIL loadAll() menyiapkan seluruh
+      // data (termasuk logbook) di belakang layar. Home/app-root baru
+      // dibuka setelah data benar-benar siap.
+      gate.style.display = 'none';
+      const splash = document.getElementById('app-splash');
+      const splashText = document.getElementById('app-splash-text');
+      if(splash){
+        splash.classList.add('show');
+        // paksa reflow supaya transisi opacity berjalan, bukan langsung 1
+        void splash.offsetWidth;
+        splash.classList.add('visible');
       }
+      // Siapkan Home di belakang layar (view + data) SEBELUM appRoot terlihat.
+      if(typeof switchToView === 'function'){ switchToView('dashboard'); }
       try{
         INITIAL_LOAD_PROMISE = loadAll();
         await INITIAL_LOAD_PROMISE;
-        // Pastikan render 2x untuk jaminan data muncul tanpa pindah halaman
-        if(typeof renderDashboardView === 'function'){
-          renderDashboardView();
-          setTimeout(()=>{ try{ renderDashboardView(); }catch(e){} }, 600);
-        }
+        if(typeof renderDashboardView === 'function'){ renderDashboardView(); }
       }catch(e){
         console.warn('[OMODOS] loadAll after login error', e);
-        toast('Login berhasil, tapi data Home agak lambat: '+e.message, true);
+        toast('Login berhasil, tapi sebagian data gagal dimuat: '+e.message, true);
       }
+      // Data (termasuk render Home) sudah siap -- baru sekarang buka aplikasi
+      // & tutup splash, supaya Home langsung tampil lengkap tanpa kedipan.
+      appRoot.classList.add('unlocked');
+      if(splash){
+        splash.classList.remove('visible');
+        setTimeout(()=>{ splash.classList.remove('show'); }, 320);
+      }
+      // Render ulang sekali lagi setelah splash hilang, jaga-jaga kalau ada
+      // komponen yang baru terukur benar setelah appRoot benar-benar terlihat
+      // (mis. chart yang butuh lebar elemen sebenarnya).
+      setTimeout(()=>{ try{ if(typeof renderDashboardView === 'function') renderDashboardView(); }catch(e){} }, 350);
     }catch(err){
       errEl.textContent = err.message || 'Gagal menghubungi server. Periksa koneksi internet Anda.';
     }finally{
@@ -22793,7 +22885,20 @@ if(typeof window.handleSavePermissions_ === 'function' && !window.handleSavePerm
       if(!supCb || !techCb) return;
       lcUpdates[key] = { Supervisor: supCb.checked, Technician: techCb.checked };
     });
-    await _origSavePermissions();
+    try{
+      await _origSavePermissions();
+    }catch(mainErr){
+      // [FIX] Kalau penyimpanan akses UTAMA (Role_Permissions/Feature
+      // Registry) gagal, JANGAN lanjut menyimpan Low Cognitive Mode.
+      // Sebelumnya error di sini diam-diam ditelan oleh _origSavePermissions
+      // (yang hanya menampilkan toast lalu berlanjut tanpa melempar error),
+      // sehingga wrapper ini TETAP lanjut menyimpan LC dan terlihat
+      // "berhasil" -- padahal perubahan akses fitur/menu (bagian utama yang
+      // diatur Superadmin) gagal tersimpan. Kegagalan utama di atas sudah
+      // ditampilkan sebagai toast oleh _origSavePermissions; di sini cukup
+      // hentikan proses supaya tidak ada kesan keliru "sudah tersimpan".
+      return;
+    }
     window.LC_PERMISSIONS = lcUpdates;
     lcPermsSaveLocal(lcUpdates);
     try{
