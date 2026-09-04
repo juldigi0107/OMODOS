@@ -1749,30 +1749,53 @@ input[type="number"]{-moz-appearance:textfield;}
    yang men-toggle opacity lewat class .blink-dim tiap 150ms -- dua jam
    berjalan sendiri-sendiri menghasilkan kedipan yang tabrakan/kacau. Ini
    persis penyebab kesan "berkedip berantakan" yang dikeluhkan.
-   Sekarang diganti pola yang dipakai dashboard profesional (Grafana,
-   HMI industri): TEKS SELALU STABIL & tetap terbaca, yang berdenyut halus
-   HANYA bayangan/glow di tepi card (box-shadow) -- sinyal "butuh perhatian"
-   tetap jelas tanpa mengorbankan keterbacaan data. Satu sumber animasi
-   saja (CSS, disinkronkan otomatis oleh browser krn semua card kritikal
-   memakai timeline animasi yang sama), tidak ada lagi JS interval kedua. */
+   [FIX] Sempat diganti jadi kedip HANYA di glow/bayangan tepi card (bukan
+   seluruh card) supaya teks tidak pernah kena efek apa pun. Tapi ini
+   membuat efek kedip nyaris tidak kelihatan dari jarak jauh karena
+   seluruh badan/latar card (bagian paling luas & paling kelihatan) tetap
+   diam -- padahal yang diminta justru SELURUH CARD ikut berkedip, bukan
+   cuma bingkainya. Sekarang dipakai `filter:brightness()` pada SELURUH
+   card (bukan cuma box-shadow) -- ini secara aman membuat seluruh latar
+   & tepi card ikut berdenyut terang-gelap, TAPI teks (putih solid,
+   #fff) TETAP SELALU TERBACA: brightness>1 pada warna putih murni tetap
+   terbaca putih (clamp ke batas atas), dan brightness<1 pada teks putih
+   hanya membuatnya sedikit abu-abu terang -- tidak pernah berubah jadi
+   warna yang tabrakan dengan latar apapun titik brightness-nya, beda
+   dengan animasi opacity/warna lain yang bisa membuat teks putih pudar
+   nyaris tak kelihatan di titik tertentu. Satu sumber animasi saja (CSS,
+   otomatis sinkron antar-card berkat timeline animasi yang sama), tidak
+   ada lagi JS interval kedua.
+   Frekuensi kedip SENGAJA dibuat BERBEDA per status (bukan angka bulat
+   kelipatan satu sama lain, supaya kedipan antar-card tidak pernah
+   terlihat "kebetulan sinkron" walau berjalan lama) dan urutannya masuk
+   akal: makin genting statusnya, makin cepat berkedip: Normal = paling
+   tenang (2.6s), Perlu Perhatian = sedang (1.8s), Kritikal = paling
+   cepat/mendesak (1s). */
+.dash-card.status-normal{
+  animation: dashPulseGreen 2.6s ease-in-out infinite;
+}
 .dash-card.status-perhatian{
   animation: dashPulseAmber 1.8s ease-in-out infinite;
 }
 .dash-card.status-kritikal{
   animation: dashPulseRed 1s ease-in-out infinite;
 }
+@keyframes dashPulseGreen{
+  0%,100%{ filter:brightness(0.82); box-shadow:0 0 0 1px rgba(62,201,143,.3), 0 0 16px -5px rgba(62,201,143,.45); }
+  50%{ filter:brightness(1.35); box-shadow:0 0 0 2px rgba(62,201,143,.65), 0 0 26px 0px rgba(62,201,143,.7); }
+}
 @keyframes dashPulseAmber{
-  0%,100%{ box-shadow:0 0 0 1px rgba(245,166,35,.35), 0 0 18px -4px rgba(245,166,35,.5); }
-  50%{ box-shadow:0 0 0 2px rgba(245,166,35,.75), 0 0 32px 2px rgba(245,166,35,.85); }
+  0%,100%{ filter:brightness(0.8); box-shadow:0 0 0 1px rgba(245,166,35,.35), 0 0 18px -4px rgba(245,166,35,.5); }
+  50%{ filter:brightness(1.4); box-shadow:0 0 0 2px rgba(245,166,35,.75), 0 0 32px 2px rgba(245,166,35,.85); }
 }
 @keyframes dashPulseRed{
-  0%,100%{ box-shadow:0 0 0 1px var(--red), 0 0 20px -2px var(--red-glow); }
-  50%{ box-shadow:0 0 0 2.5px var(--red), 0 0 38px 4px var(--red-glow); }
+  0%,100%{ filter:brightness(0.78); box-shadow:0 0 0 1px var(--red), 0 0 20px -2px var(--red-glow); }
+  50%{ filter:brightness(1.45); box-shadow:0 0 0 2.5px var(--red), 0 0 38px 4px var(--red-glow); }
 }
 /* Hormati preferensi aksesibilitas "reduced motion" -- badge status tetap
    berwarna solid (jelas dibedakan), hanya animasinya yang dimatikan. */
 @media (prefers-reduced-motion: reduce){
-  .dash-card.status-perhatian, .dash-card.status-kritikal{ animation:none !important; }
+  .dash-card.status-normal, .dash-card.status-perhatian, .dash-card.status-kritikal{ animation:none !important; filter:none !important; }
 }
 
 .app.dash-mode{grid-template-columns: 0px 1fr;}
@@ -2646,9 +2669,11 @@ body.low-cognitive *{ animation-duration:.001ms !important; animation-iteration-
 body.low-cognitive .card, body.low-cognitive .dash-card, body.low-cognitive .an-card,
 body.low-cognitive .sidebar, body.low-cognitive .modal, body.low-cognitive .btn{ box-shadow:none !important; }
 body.low-cognitive .dash-card:hover{ transform:none !important; filter:none !important; }
-/* Pengecualian: kedip status Perlu Perhatian/Kritikal di card mesin Home BUKAN
-   animasi dekoratif — ini sinyal keselamatan (mesin butuh perhatian/breakdown)
-   yang wajib tetap terlihat berkedip walau Mode Low-Cognitive aktif. */
+/* Pengecualian: kedip status Normal/Perlu Perhatian/Kritikal di card mesin Home BUKAN
+   animasi dekoratif — ini sinyal status mesin (aman/butuh perhatian/breakdown)
+   yang wajib tetap terlihat berkedip walau Mode Low-Cognitive aktif.
+   Frekuensi sengaja beda per status (lihat dashPulseGreen/Amber/Red di atas). */
+body.low-cognitive .dash-card.status-normal{ animation-duration:2.6s !important; animation-iteration-count:infinite !important; }
 body.low-cognitive .dash-card.status-perhatian{ animation-duration:1.6s !important; animation-iteration-count:infinite !important; }
 body.low-cognitive .dash-card.status-kritikal{ animation-duration:.6s !important; animation-iteration-count:infinite !important; }
 
@@ -2793,12 +2818,15 @@ table.data-table th, table.data-table td{padding:8px 10px;border-bottom:1px soli
 *, *::before, *::after{
   animation:none !important;
 }
-/* Pengecualian: pulsa status Perlu Perhatian/Kritikal di card menu Home
+/* Pengecualian: pulsa status Normal/Perlu Perhatian/Kritikal di card menu Home
    tetap perlu berjalan (indikator penting) walau Mode Polos mematikan
-   animasi lain -- lihat definisi dashPulseAmber/dashPulseRed di atas.
+   animasi lain -- lihat definisi dashPulseGreen/Amber/Red di atas.
    Ditarget ke card itu sendiri (bukan lagi ke isi/anak card), karena
    redesign kedip sekarang berupa glow di tepi card, teks tidak lagi ikut
    dianimasikan supaya selalu stabil & mudah dibaca. */
+.dash-card.status-normal{
+  animation: dashPulseGreen 2.6s ease-in-out infinite !important;
+}
 .dash-card.status-perhatian{
   animation: dashPulseAmber 1.8s ease-in-out infinite !important;
 }
@@ -5865,8 +5893,40 @@ function applyRbacToUi(){
     const allowed = !known || hasPermission(key);
     btn.style.display = allowed ? '' : 'none';
   });
-  // Sembunyikan grup kalau SEMUA submenu di dalamnya disembunyikan.
+  // Sembunyikan grup kalau (a) SEMUA submenu di dalamnya disembunyikan, ATAU
+  // (b) grup itu sendiri punya permission 'group.<key>' yang secara eksplisit
+  // di-nonaktifkan di Role Access Management (mis. Superadmin sengaja
+  // mematikan seluruh grup "Reports & Field Work" untuk role tertentu, walau
+  // submenu di dalamnya belum tentu satu-satu di-nonaktifkan).
+  // [FIX] Sebelumnya permission 'group.<key>' HANYA dipakai untuk Low
+  // Cognitive Mode (data-lc-hide) -- tidak pernah benar-benar menyembunyikan
+  // grup dari Role Access Management biasa. Sekarang keduanya diperiksa.
+  // [FIX] Tombol bottom-nav mobile (data-group="...") sebelumnya TIDAK ikut
+  // disembunyikan sama sekali oleh RBAC -- hanya sidebar yang tergate,
+  // sehingga tombol grup di bottom-nav tetap muncul walau seluruh isinya
+  // (atau grupnya sendiri) tidak diizinkan untuk role tsb. Sekarang
+  // visibilitas bottom-nav-btn[data-group] SELALU disamakan dengan grup
+  // sidebar yang bersangkutan.
   $$('.nav-group-collapsible').forEach(group=>{
+    const parentBtn = $('.nav-parent-btn', group);
+    const groupKey = (parentBtn && parentBtn.dataset.group) || group.dataset.groupKey || '';
+    const permKey = 'group.' + groupKey;
+    const permKnown = !!groupKey && FEATURE_REGISTRY.some(f => f.PermissionKey === permKey);
+    const explicitlyDenied = permKnown && !hasPermission(permKey);
+    const visibleChild = $$('.nav-btn[data-view]', group).some(b => b.style.display !== 'none');
+    const visible = !explicitlyDenied && visibleChild;
+    group.style.display = visible ? '' : 'none';
+    if(groupKey){
+      $$('.bottom-nav-btn[data-group="'+groupKey+'"]').forEach(bn=>{ bn.style.display = visible ? '' : 'none'; });
+    }
+  });
+  // [FIX] Grup sidebar TUNGGAL (bukan collapsible) yang cuma membungkus satu
+  // nav-btn, mis. "Home", "Insights", "People & Meetings" -- kalau nav-btn
+  // di dalamnya disembunyikan (tidak diizinkan), div pembungkusnya sendiri
+  // sebelumnya tetap ada di DOM (kosong, tapi masih mengambil margin-bottom),
+  // menyisakan celah kosong di sidebar. Sekarang div pembungkus itu ikut
+  // disembunyikan total kalau satu-satunya isinya tidak diizinkan.
+  $$('.nav-group:not(.nav-group-collapsible)').forEach(group=>{
     const visibleChild = $$('.nav-btn[data-view]', group).some(b => b.style.display !== 'none');
     group.style.display = visibleChild ? '' : 'none';
   });
@@ -6296,6 +6356,18 @@ async function handleSavePermissions_(){
     });
     PERMISSIONS = res.permissions || updates;
     if(res.features && res.features.length) FEATURE_REGISTRY = mergeFeatureRegistry(res.features);
+    // [FIX] Sebelumnya PERMISSIONS/FEATURE_REGISTRY yang baru hanya diupdate
+    // di memori (variabel JS), TIDAK PERNAH ditulis ulang ke localStorage.
+    // Akibatnya begitu tab/browser ditutup lalu dibuka lagi, restoreRbacSession_()
+    // sempat unlock UI memakai cache localStorage LAMA (dari sesi login
+    // sebelumnya) dulu sebelum sempat menyegarkan dari server -- dan kalau
+    // penyegaran background itu gagal/lambat (koneksi tidak stabil), akses
+    // yang baru saja disimpan Superadmin terlihat "hilang"/tidak tersimpan,
+    // padahal sebenarnya sudah tersimpan benar di Google Sheets. Memanggil
+    // cacheRbacSession_() di sini memastikan localStorage SELALU langsung
+    // sinkron dengan hasil simpan terbaru, tidak bergantung pada refresh
+    // background saat sesi dipulihkan nanti.
+    cacheRbacSession_();
     statusEl.textContent = 'Tersimpan.';
     toast('Perubahan akses berhasil disimpan dan langsung berlaku.');
     applyRbacToUi();
