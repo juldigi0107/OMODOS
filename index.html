@@ -6345,7 +6345,7 @@ async function handleSavePermissions_(){
   const updates = {};
   const lcUpdates = {};
   $$('#rbac-permission-table tr[data-permkey]').forEach(row=>{
-    const key = row.dataset.permkey;
+    const key = String(row.dataset.permkey || '').trim();
     const sup = $('.rp-cb-supervisor', row);
     const tech = $('.rp-cb-technician', row);
     if(!key || !sup || !tech) return;
@@ -6355,64 +6355,87 @@ async function handleSavePermissions_(){
     if(lcSup && lcTech) lcUpdates[key] = { Supervisor: !!lcSup.checked, Technician: !!lcTech.checked };
   });
   if(!Object.keys(updates).length){ toast('Tidak ada konfigurasi akses yang dapat disimpan.', true); return false; }
+  if(!WEB_APP_URL || !/\/exec(?:\?|$)/i.test(WEB_APP_URL)){
+    toast('URL backend Google Apps Script harus URL Web App /exec yang sudah di-deploy.', true);
+    return false;
+  }
+  if(!SESSION_TOKEN && !(SETTING_AUTH_OK && SETTING_SESSION_TOKEN)){
+    toast('Sesi login tidak tersedia. Login ulang lalu buka kembali Role Access Management.', true);
+    return false;
+  }
 
   const matrixMatches = (expected, actual)=> Object.keys(expected).every(key =>
     !!(actual && actual[key] && actual[key].Supervisor) === !!expected[key].Supervisor &&
     !!(actual && actual[key] && actual[key].Technician) === !!expected[key].Technician
   );
 
-  statusEl.textContent = 'Menyimpan & memverifikasi...';
+  const featuresPayload = (FEATURE_REGISTRY || [])
+    .filter(f=>f && f.PermissionKey)
+    .map(f=>({ PermissionKey:String(f.PermissionKey), Label:String(f.Label||f.PermissionKey), Group:String(f.Group||'Umum') }));
+
+  statusEl.textContent = 'Tahap 1/3 — menyimpan akses...';
   if(saveBtn) saveBtn.disabled = true;
+  let stage = 'menyimpan Role_Permissions';
   try{
-    const featuresPayload = FEATURE_REGISTRY.map(f=>({ PermissionKey:f.PermissionKey, Label:f.Label, Group:f.Group }));
-    let res;
-    try{
-      // Endpoint baru: RBAC utama + Low Cognitive disimpan dalam SATU transaksi
-      // backend, dikunci dengan ScriptLock, lalu dibaca ulang untuk verifikasi.
-      res = await apiPost({
-        action:'saveRoleAccessConfig',
-        actor: CURRENT_USER.username,
-        permissions: updates,
-        lcPermissions: lcUpdates,
-        features: featuresPayload
+    // GitHub Pages -> Apps Script: gunakan endpoint kompatibel backend lama.
+    const mainRes = await apiPost({
+      action:'savePermissions',
+      actor: CURRENT_USER && CURRENT_USER.username ? CURRENT_USER.username : '',
+      permissions: updates,
+      features: featuresPayload
+    });
+
+    stage = 'menyimpan Low Cognitive permissions';
+    if(Object.keys(lcUpdates).length){
+      statusEl.textContent = 'Tahap 2/3 — menyimpan Low Cognitive...';
+      await apiPost({
+        action:'saveLcPermissions',
+        actor: CURRENT_USER && CURRENT_USER.username ? CURRENT_USER.username : '',
+        lcPermissions: lcUpdates
       });
-    }catch(atomicErr){
-      // Kompatibilitas saat frontend baru terpasang sebelum code.gs baru
-      // selesai di-deploy. Hanya fallback bila endpoint memang belum dikenal.
-      if(!/UNKNOWN_ACTION|Action tidak terdaftar/i.test(atomicErr.message||'')) throw atomicErr;
-      const mainRes = await apiPost({ action:'savePermissions', actor:CURRENT_USER.username, permissions:updates, features:featuresPayload });
-      let lcRes = { lcPermissions: lcUpdates, permissions: lcUpdates };
-      if(Object.keys(lcUpdates).length){
-        lcRes = await apiPost({ action:'saveLcPermissions', actor:CURRENT_USER.username, lcPermissions:lcUpdates });
-      }
-      res = {
-        permissions: mainRes.permissions || updates,
-        lcPermissions: lcRes.lcPermissions || lcRes.permissions || lcUpdates,
-        features: mainRes.features || []
-      };
     }
 
-    const savedPermissions = res.permissions || updates;
-    const savedLc = res.lcPermissions || lcUpdates;
+    stage = 'memverifikasi hasil dari Google Sheets';
+    statusEl.textContent = 'Tahap 3/3 — memverifikasi dari Google Sheets...';
+    const verifyCalls = [apiGet('permissions')];
+    if(Object.keys(lcUpdates).length) verifyCalls.push(apiGet('lcPermissions'));
+    const verified = await Promise.all(verifyCalls);
+    const savedPermissions = verified[0] || {};
+    const savedLc = Object.keys(lcUpdates).length ? (verified[1] || {}) : (window.LC_PERMISSIONS || {});
+
     if(!matrixMatches(updates, savedPermissions)){
-      throw new Error('Verifikasi gagal: konfigurasi akses yang dibaca ulang dari server tidak sama dengan pilihan di layar.');
+      throw new Error('Verifikasi Role_Permissions gagal: data yang dibaca kembali dari Google Sheets tidak sama dengan pilihan di layar.');
     }
     if(Object.keys(lcUpdates).length && !matrixMatches(lcUpdates, savedLc)){
-      throw new Error('Verifikasi gagal: konfigurasi Low Cognitive yang dibaca ulang dari server tidak sama dengan pilihan di layar.');
+      throw new Error('Verifikasi Low Cognitive gagal: data yang dibaca kembali dari Google Sheets tidak sama dengan pilihan di layar.');
     }
 
     PERMISSIONS = savedPermissions;
-    if(res.features && res.features.length) FEATURE_REGISTRY = mergeFeatureRegistry(res.features);
+    if(mainRes && mainRes.features && mainRes.features.length) FEATURE_REGISTRY = mergeFeatureRegistry(mainRes.features);
     window.LC_PERMISSIONS = savedLc;
     try{ localStorage.setItem('logbook_lc_permissions', JSON.stringify(savedLc)); }catch(e){}
     cacheRbacSession_();
-    statusEl.textContent = 'Tersimpan & terverifikasi.';
-    toast('Perubahan Role Access berhasil disimpan dan diverifikasi dari server.');
+    statusEl.textContent = 'Tersimpan & terverifikasi dari Google Sheets.';
+    toast('Perubahan Role Access berhasil disimpan dan dibaca ulang dari Google Sheets.');
     applyRbacToUi();
     return true;
   }catch(err){
-    statusEl.textContent = 'Gagal menyimpan.';
-    toast((err && err.message) ? err.message : 'Gagal menyimpan perubahan akses.', true);
+    const raw = (err && err.message) ? err.message : String(err || 'Gagal menyimpan perubahan akses.');
+    let hint = '';
+    if(/UNKNOWN_ACTION|Action tidak terdaftar|METHOD_NOT_ALLOWED/i.test(raw)){
+      hint = ' Backend /exec yang aktif belum memakai Code.gs terbaru. Deploy > Manage deployments > Edit > pilih New version, lalu Deploy.';
+    }else if(/Backend mengirim halaman HTML|Unexpected token.*</i.test(raw)){
+      hint = ' Deployment Web App kemungkinan meminta login Google. Untuk frontend GitHub Pages, deploy Apps Script sebagai Web App yang dieksekusi sebagai pemilik/deployer dan dapat diakses Anyone.';
+    }else if(/Failed to fetch|NetworkError|Load failed|CORS/i.test(raw)){
+      hint = ' Browser tidak dapat mengakses Web App. Pastikan URL berakhiran /exec dan deployment mengizinkan akses dari browser publik.';
+    }else if(/AUTH_REQUIRED|SESSION_INVALID|SESSION_EXPIRED|ACCOUNT_INACTIVE/i.test(raw)){
+      hint = ' Sesi autentikasi sudah tidak valid; login ulang diperlukan.';
+    }else if(/FORBIDDEN|rbac\.manage/i.test(raw)){
+      hint = ' Request harus memakai sesi Superadmin.';
+    }
+    statusEl.textContent = 'Gagal pada tahap: ' + stage + '.';
+    toast('Gagal ' + stage + ': ' + raw + hint, true);
+    console.error('[RBAC SAVE FAILED]', {stage, error:err, backend:WEB_APP_URL});
     return false;
   }finally{
     if(saveBtn) saveBtn.disabled = false;
@@ -6825,6 +6848,15 @@ async function fetchWithTimeout_(url, options={}, timeoutMs=45000){
     throw err;
   }finally{ clearTimeout(timer); }
 }
+function handleApiAuthFailure_(message, requestToken){
+  const msg = String(message || '');
+  if(!/AUTH_REQUIRED|SESSION_INVALID|SESSION_EXPIRED|ACCOUNT_INACTIVE/.test(msg)) return;
+  if(SETTING_AUTH_OK && SETTING_SESSION_TOKEN && requestToken === SETTING_SESSION_TOKEN){
+    resetSettingAuth();
+    return;
+  }
+  logoutUser();
+}
 async function apiGet(action, params={}, retries=2){
   // PATCHED v2.1 - 45s + retry 2x dengan backoff, prioritas bootstrap
   if(!WEB_APP_URL){ throw new Error('NO_URL'); }
@@ -6837,7 +6869,7 @@ async function apiGet(action, params={}, retries=2){
       const res = await fetchWithTimeout_(WEB_APP_URL + '?' + qs, {}, 45000);
       const json = await parseApiResponse_(res);
       if(!json.ok){
-        if(/AUTH_REQUIRED|SESSION_INVALID|SESSION_EXPIRED|ACCOUNT_INACTIVE/.test(json.error || '')) logoutUser();
+        handleApiAuthFailure_(json.error || '', requestToken);
         throw new Error(json.error || 'Gagal mengambil data');
       }
       return json.data;
@@ -6866,12 +6898,16 @@ async function apiPost(payload){
     // text/plain menghindari CORS preflight ke Apps Script
     const res = await fetchWithTimeout_(WEB_APP_URL, {
       method: 'POST',
+      mode: 'cors',
+      credentials: 'omit',
+      redirect: 'follow',
+      cache: 'no-store',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: JSON.stringify(securedPayload)
     }, 60000); // PATCHED: 60s untuk POST (upload file bisa lama)
     const json = await parseApiResponse_(res);
     if(!json.ok){
-      if(/AUTH_REQUIRED|SESSION_INVALID|SESSION_EXPIRED|ACCOUNT_INACTIVE/.test(json.error || '')) logoutUser();
+      handleApiAuthFailure_(json.error || '', requestToken);
       throw new Error(json.error || 'Gagal menyimpan data');
     }
     setAppOnlineStatus(true);
