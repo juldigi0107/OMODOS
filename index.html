@@ -1080,6 +1080,46 @@ input[type="number"]{-moz-appearance:textfield;}
 .lightbox-inner iframe.pdf-frame{
   width:min(94vw,1000px);height:min(88vh,1200px);background:#fff;
 }
+
+/* ---------------- KAMERA LANGSUNG (real-time capture) ---------------- */
+.camera-capture-bg{
+  display:none;position:fixed;inset:0;background:rgba(3,3,5,.96);
+  z-index:400;align-items:center;justify-content:center;padding:16px;
+}
+.camera-capture-bg.active{display:flex;animation:slideIn .15s ease;}
+.camera-capture-box{
+  width:100%;max-width:520px;background:var(--panel);border:1px solid var(--line);
+  border-radius:var(--radius);overflow:hidden;display:flex;flex-direction:column;
+}
+.camera-capture-head{
+  display:flex;align-items:center;justify-content:space-between;padding:12px 16px;
+  border-bottom:1px solid var(--line);font-family:var(--font-display);font-weight:700;color:var(--text);
+}
+.camera-capture-viewport{
+  position:relative;background:#000;width:100%;aspect-ratio:3/4;max-height:62vh;
+  display:flex;align-items:center;justify-content:center;overflow:hidden;
+}
+.camera-capture-viewport video{ width:100%; height:100%; object-fit:cover; }
+.camera-capture-rec-badge{
+  position:absolute;top:10px;left:10px;background:rgba(0,0,0,.55);color:#fff;
+  font-size:12px;font-weight:700;padding:4px 10px;border-radius:20px;display:flex;align-items:center;gap:6px;
+}
+.camera-capture-rec-badge .dot{width:8px;height:8px;border-radius:50%;background:#ff3b30;animation:appSplashPulse 1s ease-in-out infinite;}
+.camera-capture-error{
+  position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;
+  padding:20px;color:#fff;font-size:13px;background:rgba(0,0,0,.7);
+}
+.camera-capture-controls{
+  display:flex;gap:8px;flex-wrap:wrap;padding:12px 16px;justify-content:center;
+  border-top:1px solid var(--line);
+}
+
+/* Tombol "Ambil dari Kamera" yang disisipkan otomatis ke setiap dropzone
+   foto/video (lihat enhanceFileDropWithCamera() di bagian script). */
+.file-drop-camera-btn{
+  display:inline-flex;align-items:center;gap:6px;margin-top:8px;
+}
+
 .database-grid{
   display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px;
 }
@@ -2268,21 +2308,28 @@ html[data-theme="red-black"] .omodos-logo{
 #app-splash{
   position:fixed; inset:0; z-index:9999;
   display:none; align-items:center; justify-content:center;
-  background:#0d0f14;
-  opacity:0; transition:opacity 320ms ease;
+  /* [FIX] Dulu hardcode #0d0f14 (selalu gelap) sehingga di tema terang
+     (omodos/abu-profesional) latar splash tidak sinkron dengan tema aktif
+     dan logo jadi kurang kontras. Sekarang ikut var(--bg)/var(--text) tema
+     aktif, sama seperti seluruh halaman lain, supaya "DNA" splash selalu
+     senada dengan tema yang sedang dipakai. Kontras logo otomatis ikut
+     benar juga, karena rule cincin putih di .omodos-logo (utk tema gelap
+     red-black) berlaku global ke elemen ini juga. */
+  background:var(--bg, #0d0f14);
+  opacity:0; transition:opacity 320ms ease, background-color var(--trans, 220ms);
 }
 #app-splash.show{ display:flex; }
 #app-splash.visible{ opacity:1; }
 .app-splash-box{ text-align:center; padding:20px; }
 .app-splash-box .omodos-logo{ width:72px; height:72px; margin:0 auto 18px auto; animation:appSplashPulse 1.8s ease-in-out infinite; }
 @keyframes appSplashPulse{0%,100%{transform:scale(1);opacity:1;}50%{transform:scale(1.06);opacity:.85;}}
-.app-splash-spinner{ font-size:22px; color:#00AEEF; margin-bottom:14px; }
+.app-splash-spinner{ font-size:22px; color:var(--blue, #00AEEF); margin-bottom:14px; }
 .app-splash-text{
-  font-family:var(--font-display, inherit); color:#fff; font-size:16px;
+  font-family:var(--font-display, inherit); color:var(--text, #fff); font-size:16px;
   font-weight:700; letter-spacing:.4px; margin-bottom:8px;
 }
 .app-splash-sub{
-  font-family:var(--font-mono, inherit); color:#8b93a0; font-size:11.5px;
+  font-family:var(--font-mono, inherit); color:var(--text-dim, #8b93a0); font-size:11.5px;
   letter-spacing:.3px;
 }
 .omodos-divider{display:flex;align-items:center;gap:10px;margin:16px 0;}
@@ -5040,7 +5087,9 @@ pre, code{ white-space:pre-wrap; word-break:break-word; overflow-wrap:anywhere; 
           </div>
           <div class="grid2">
             <div class="field"><label>Posisi / Jabatan</label><input type="text" id="new-jabatan-personil" placeholder="cth: Offset Mechanical Supervisor"></div>
-            <div class="field"><label>Foto Personil</label><input type="file" id="personil-photo-file" accept="image/*"></div>
+            <div class="field"><label>Foto Personil</label><input type="file" id="personil-photo-file" accept="image/*">
+              <button type="button" class="btn btn-ghost btn-sm file-drop-camera-btn" id="btn-camera-personil-photo"><i class="ph-bold ph-camera"></i> Ambil dari Kamera</button>
+            </div>
             <div class="field"><label>Preview Foto</label><div id="personil-photo-preview" style="min-height:120px;border:1px dashed var(--line);border-radius:10px;display:flex;align-items:center;justify-content:center;color:var(--text-dim);overflow:hidden;">Belum ada foto</div></div>
           </div>
           <button class="btn btn-sm" id="btn-add-personil">+ Tambah Personil</button>
@@ -5288,6 +5337,35 @@ pre, code{ white-space:pre-wrap; word-break:break-word; overflow-wrap:anywhere; 
 
 <div class="lightbox-bg" id="lightbox-bg">
   <div class="lightbox-inner" id="lightbox-inner"></div>
+</div>
+
+<!-- ==================================================================
+     KAMERA LANGSUNG (real-time capture) — dipakai semua form yang punya
+     input Foto/Video (Input Logbook, Temuan Patrol, Foto Personil, Update
+     Progress Project Center, dll). Sebelumnya klik dropzone hanya membuka
+     file picker OS (galeri/berkas) — sekarang ditambah opsi "Ambil dari
+     Kamera" yang membuka preview kamera langsung di dalam aplikasi, bisa
+     jepret foto atau rekam video real-time, tanpa perlu keluar ke aplikasi
+     kamera bawaan / galeri.
+     ================================================================== -->
+<div class="camera-capture-bg" id="camera-capture-bg">
+  <div class="camera-capture-box">
+    <div class="camera-capture-head">
+      <div id="camera-capture-title">Ambil dari Kamera</div>
+      <button type="button" class="modal-close" id="btn-close-camera-capture">✕</button>
+    </div>
+    <div class="camera-capture-viewport">
+      <video id="camera-capture-video" autoplay playsinline muted></video>
+      <div class="camera-capture-rec-badge" id="camera-capture-rec-badge" style="display:none;"><span class="dot"></span> REC <span id="camera-capture-rec-timer">00:00</span></div>
+      <div class="camera-capture-error" id="camera-capture-error" style="display:none;"></div>
+    </div>
+    <canvas id="camera-capture-canvas" style="display:none;"></canvas>
+    <div class="camera-capture-controls">
+      <button type="button" class="btn btn-ghost btn-sm" id="btn-camera-switch"><i class="ph-bold ph-arrows-clockwise"></i> Ganti Kamera</button>
+      <button type="button" class="btn btn-primary" id="btn-camera-snap"><i class="ph-bold ph-camera"></i> Jepret Foto</button>
+      <button type="button" class="btn btn-primary" id="btn-camera-record" style="background:var(--red);border-color:var(--red);"><i class="ph-bold ph-record"></i> Mulai Rekam</button>
+    </div>
+  </div>
 </div>
 
 <div class="toast" id="toast"></div>
@@ -7286,6 +7364,23 @@ async function loadAll(){
       const fullEntries = await apiGet('list');
       if(Array.isArray(fullEntries) && fullEntries.length){
         ENTRIES = fullEntries.sort((a,b)=> new Date(b['Timestamp Input']) - new Date(a['Timestamp Input']));
+        // [FIX] Sebelumnya ENTRIES di-update di sini tapi TIDAK ADA yang
+        // memberitahu UI ("cnt-utama" di sidebar & halaman Lihat Logbook)
+        // kalau data sudah lengkap. Akibatnya: angka di sidebar "Lihat
+        // Logbook" nyangkut di hitungan awal (recentEntries/SOT saja, bisa
+        // 0 kalau belum ada entri >= SOT_CUTOFF_DATE), dan kalau halaman
+        // Logbook (view "utama") sedang dibuka, isinya tidak ikut nambah
+        // sampai user pindah halaman lalu balik lagi / klik Refresh manual.
+        // Sekarang begitu data lengkap datang, langsung: (1) update angka
+        // sidebar, dan (2) render ulang halaman Logbook kalau sedang aktif
+        // — tanpa perlu menunggu seluruh proses sinkronisasi lain di bawah
+        // ini selesai dulu.
+        try{ updateSidebarCounts(); }catch(e){}
+        try{
+          if(document.getElementById('view-utama') && document.getElementById('view-utama').classList.contains('active') && typeof renderUtama==='function'){
+            renderUtama();
+          }
+        }catch(e){}
       }
     }catch(e){}
     try{ await syncPmReportsFromBackend(); }catch(e){}
@@ -7303,6 +7398,13 @@ async function loadAll(){
     // Refresh Home sekali lagi setelah background selesai, biar chip KPI/PO ikut update
     if(typeof renderDashboardView==='function' && document.getElementById('view-dashboard') && document.getElementById('view-dashboard').classList.contains('active')){
       try{ renderDashboardView(); }catch(e){}
+    }
+    // [FIX] Sama seperti Dashboard: kalau user sedang di halaman Logbook,
+    // pastikan tampilannya ikut disegarkan sekali lagi setelah seluruh
+    // proses background selesai, dan angka sidebar selalu final/akurat.
+    try{ updateSidebarCounts(); }catch(e){}
+    if(typeof renderUtama==='function' && document.getElementById('view-utama') && document.getElementById('view-utama').classList.contains('active')){
+      try{ renderUtama(); }catch(e){}
     }
   }, 400);
 }
@@ -15212,6 +15314,190 @@ $('#input-jamMulai').addEventListener('change', computeEstimasi);
 $('#input-jamSelesai').addEventListener('change', computeEstimasi);
 
 /* =========================================================
+   KAMERA LANGSUNG (real-time capture) — ambil foto/video langsung dari
+   kamera perangkat TANPA keluar ke galeri/aplikasi kamera bawaan.
+   Dipasang generik ke SEMUA dropzone foto/video ("file-drop") lewat
+   enhanceFileDropWithCamera() di bawah, supaya berlaku otomatis untuk
+   Input Logbook, Temuan Patrol, Foto Personil, Update Progress Project
+   Center, dsb — tanpa duplikasi kode per form. Hasil jepretan/rekaman
+   dimasukkan balik ke <input type="file"> yang bersangkutan lewat
+   DataTransfer lalu men-trigger event 'change' seperti biasa, sehingga
+   listener existing (handleFiles, handlePatrolFindingFiles, dst) tetap
+   jalan tanpa perlu diubah sama sekali.
+   ========================================================= */
+let CAM_STREAM = null;
+let CAM_TARGET_INPUT = null;
+let CAM_FACING = 'environment';
+let CAM_RECORDER = null;
+let CAM_REC_CHUNKS = [];
+let CAM_REC_TIMER = null;
+let CAM_REC_SECONDS = 0;
+
+function fileDropAcceptsMedia(input){
+  const acc = (input && input.getAttribute('accept')) || '';
+  return /image|video/i.test(acc) || !acc; // tanpa 'accept' dianggap boleh media juga
+}
+function fileDropWants(input, kind){
+  const acc = (input && input.getAttribute('accept')) || '';
+  if(!acc) return true;
+  return acc.toLowerCase().includes(kind);
+}
+
+// Menyisipkan tombol "Ambil dari Kamera" ke sebuah elemen .file-drop (idempotent —
+// aman dipanggil berkali-kali, mis. tiap kali form dinamis dibuka ulang).
+function enhanceFileDropWithCamera(dropEl){
+  if(!dropEl || dropEl._camEnhanced) return;
+  const input = dropEl.querySelector('input[type="file"]');
+  if(!input || !fileDropAcceptsMedia(input)) return;
+  dropEl._camEnhanced = true;
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'btn btn-ghost btn-sm file-drop-camera-btn';
+  btn.innerHTML = '<i class="ph-bold ph-camera"></i> Ambil dari Kamera';
+  btn.addEventListener('click', (ev)=>{
+    ev.stopPropagation();
+    openCameraCapture(input, { wantsPhoto: fileDropWants(input,'image'), wantsVideo: fileDropWants(input,'video') });
+  });
+  dropEl.appendChild(btn);
+}
+
+// Dipanggil sekali saat halaman siap untuk semua dropzone statis yang sudah
+// ada di HTML dari awal.
+function enhanceAllStaticFileDrops(){
+  $$('.file-drop').forEach(el=> enhanceFileDropWithCamera(el));
+}
+
+async function openCameraCapture(targetInput, opts){
+  opts = opts || {};
+  CAM_TARGET_INPUT = targetInput;
+  const bg = $('#camera-capture-bg');
+  const video = $('#camera-capture-video');
+  const errBox = $('#camera-capture-error');
+  const btnSnap = $('#btn-camera-snap');
+  const btnRec = $('#btn-camera-record');
+  btnSnap.style.display = opts.wantsPhoto===false ? 'none' : '';
+  btnRec.style.display = opts.wantsVideo===false ? 'none' : '';
+  errBox.style.display = 'none';
+  bg.classList.add('active');
+  await camStartStream(video, errBox);
+}
+
+async function camStartStream(video, errBox){
+  camStopStream();
+  try{
+    CAM_STREAM = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: CAM_FACING },
+      audio: true // audio diikutkan supaya rekaman video temuan/logbook ada suaranya juga
+    });
+    video.srcObject = CAM_STREAM;
+    errBox.style.display = 'none';
+  }catch(e){
+    errBox.textContent = 'Tidak bisa mengakses kamera: ' + (e.message || 'izin ditolak / tidak tersedia. Pastikan browser diizinkan mengakses kamera.');
+    errBox.style.display = 'flex';
+  }
+}
+function camStopStream(){
+  if(CAM_STREAM){ CAM_STREAM.getTracks().forEach(t=> t.stop()); CAM_STREAM = null; }
+}
+function camStopRecordingIfAny(){
+  if(CAM_RECORDER && CAM_RECORDER.state !== 'inactive'){ try{ CAM_RECORDER.stop(); }catch(e){} }
+  if(CAM_REC_TIMER){ clearInterval(CAM_REC_TIMER); CAM_REC_TIMER = null; }
+  $('#camera-capture-rec-badge').style.display = 'none';
+  $('#btn-camera-record').innerHTML = '<i class="ph-bold ph-record"></i> Mulai Rekam';
+}
+function closeCameraCapture(){
+  camStopRecordingIfAny();
+  camStopStream();
+  $('#camera-capture-bg').classList.remove('active');
+  CAM_TARGET_INPUT = null;
+}
+
+// Menyalurkan File hasil jepretan/rekaman kamera ke <input type=file> tujuan,
+// TETAP MEMPERTAHANKAN file yang sudah dipilih sebelumnya (kalau input
+// mendukung multiple), lalu men-trigger 'change' supaya listener form yang
+// sudah ada (handleFiles, dsb.) otomatis memproses seperti file dari galeri.
+function camDeliverFileToInput(file){
+  if(!CAM_TARGET_INPUT) return;
+  const dt = new DataTransfer();
+  if(CAM_TARGET_INPUT.multiple && CAM_TARGET_INPUT.files){
+    Array.from(CAM_TARGET_INPUT.files).forEach(f=> dt.items.add(f));
+  }
+  dt.items.add(file);
+  CAM_TARGET_INPUT.files = dt.files;
+  CAM_TARGET_INPUT.dispatchEvent(new Event('change', { bubbles:true }));
+}
+
+$('#btn-close-camera-capture').addEventListener('click', closeCameraCapture);
+$('#camera-capture-bg').addEventListener('click', (ev)=>{ if(ev.target.id==='camera-capture-bg') closeCameraCapture(); });
+
+$('#btn-camera-switch').addEventListener('click', async ()=>{
+  CAM_FACING = CAM_FACING === 'environment' ? 'user' : 'environment';
+  await camStartStream($('#camera-capture-video'), $('#camera-capture-error'));
+});
+
+$('#btn-camera-snap').addEventListener('click', ()=>{
+  const video = $('#camera-capture-video');
+  const canvas = $('#camera-capture-canvas');
+  if(!video.videoWidth){ toast('Kamera belum siap, coba lagi sebentar.', true); return; }
+  canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+  canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+  canvas.toBlob((blob)=>{
+    if(!blob){ toast('Gagal mengambil foto dari kamera.', true); return; }
+    const file = new File([blob], `kamera-${Date.now()}.jpg`, { type:'image/jpeg' });
+    camDeliverFileToInput(file);
+    toast('Foto dari kamera ditambahkan.');
+    closeCameraCapture();
+  }, 'image/jpeg', 0.9);
+});
+
+$('#btn-camera-record').addEventListener('click', ()=>{
+  if(CAM_RECORDER && CAM_RECORDER.state === 'recording'){
+    camStopRecordingIfAny();
+    return;
+  }
+  if(!CAM_STREAM){ toast('Kamera belum siap, coba lagi sebentar.', true); return; }
+  CAM_REC_CHUNKS = [];
+  let mimeType = 'video/webm';
+  if(typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported){
+    if(MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')) mimeType = 'video/webm;codecs=vp9,opus';
+    else if(MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus')) mimeType = 'video/webm;codecs=vp8,opus';
+  }
+  try{
+    CAM_RECORDER = new MediaRecorder(CAM_STREAM, { mimeType });
+  }catch(e){
+    toast('Perekaman video tidak didukung browser ini.', true);
+    return;
+  }
+  CAM_RECORDER.ondataavailable = (ev)=>{ if(ev.data && ev.data.size) CAM_REC_CHUNKS.push(ev.data); };
+  CAM_RECORDER.onstop = ()=>{
+    const blob = new Blob(CAM_REC_CHUNKS, { type:'video/webm' });
+    if(blob.size){
+      const file = new File([blob], `kamera-${Date.now()}.webm`, { type:'video/webm' });
+      camDeliverFileToInput(file);
+      toast('Video dari kamera ditambahkan.');
+    }
+    closeCameraCapture();
+  };
+  CAM_RECORDER.start();
+  CAM_REC_SECONDS = 0;
+  $('#camera-capture-rec-badge').style.display = 'flex';
+  $('#camera-capture-rec-timer').textContent = '00:00';
+  $('#btn-camera-record').innerHTML = '<i class="ph-bold ph-stop"></i> Berhenti & Simpan';
+  CAM_REC_TIMER = setInterval(()=>{
+    CAM_REC_SECONDS++;
+    const m = String(Math.floor(CAM_REC_SECONDS/60)).padStart(2,'0');
+    const s = String(CAM_REC_SECONDS%60).padStart(2,'0');
+    $('#camera-capture-rec-timer').textContent = `${m}:${s}`;
+  }, 1000);
+});
+
+// Pasang tombol "Ambil dari Kamera" ke semua dropzone foto/video yang sudah
+// ada di HTML sejak awal (Input Logbook, Temuan Patrol, dll). Dropzone yang
+// dibuat belakangan secara dinamis (form Project Center) di-enhance sendiri
+// lewat enhanceFileDropWithCamera() di titik pembuatannya masing-masing.
+enhanceAllStaticFileDrops();
+
+/* =========================================================
    AUTO-COMPRESS FOTO & VIDEO SEBELUM DIUNGGAH
    ========================================================= */
 const IMG_MAX_DIM = 720;
@@ -16668,6 +16954,10 @@ if(personilPhotoInput){
     $('#personil-photo-preview').innerHTML = `<img src="data:${PENDING_PERSONIL_PHOTO.mimeType};base64,${base64}" style="width:100%;max-height:180px;object-fit:cover;">`;
   });
 }
+const btnCameraPersonilPhoto = $('#btn-camera-personil-photo');
+if(btnCameraPersonilPhoto){
+  btnCameraPersonilPhoto.addEventListener('click', ()=> openCameraCapture(personilPhotoInput, { wantsPhoto:true, wantsVideo:false }));
+}
 
 $('#btn-add-personil').addEventListener('click', async ()=>{
   const personil = {
@@ -17155,8 +17445,21 @@ async function syncPmReportsFromBackend(){
           patrolMode: r.patrolMode || local.patrolMode || false
         };
       });
-      savePmReportsLocal(merged);
-      return merged;
+      // [FIX] Sebelumnya kalau ada laporan yang BARU SAJA disimpan (mis. patrol
+      // yang baru selesai diisi lewat "Simpan") tapi belum sempat terbaca balik
+      // dari backend saat request 'predictiveReports' ini dijalankan (mis. karena
+      // cache Google Sheets sedikit delay), laporan itu HILANG total dari
+      // tampilan — karena `merged` di atas hanya dibangun dari daftar `normalized`
+      // (hasil backend), laporan lokal yang belum muncul di sana ikut terbuang.
+      // Ini penyebab utama "Daftar Temuan" & "Riwayat Patrol" kadang tampak
+      // kosong padahal baru saja diisi lewat Input Patrol. Sekarang laporan lokal
+      // yang ID-nya belum ada di `normalized` tetap disertakan, supaya data yang
+      // baru disimpan tidak pernah hilang dari layar hanya karena race sinkronisasi.
+      const normalizedIds = new Set(normalized.map(r=>r.id));
+      const localOnly = localList.filter(l=> l && l.id && !normalizedIds.has(l.id));
+      const mergedFinal = merged.concat(localOnly);
+      savePmReportsLocal(mergedFinal);
+      return mergedFinal;
     }
   }catch(e){ /* action 'predictiveReports' mungkin belum tersedia di backend; pakai cache lokal */ }
   return loadPmReportsLocal();
@@ -17483,7 +17786,15 @@ function renderPatrolChecklist(){
   // sini; semua item spesifik berasal dari data yang tersimpan di backend.
   const specificDef = {};
   const kodeAktif = String(PATROL_STATE.kodeMesin||'').trim();
-  const specificItems = kodeAktif ? PATROL_TEMPLATE.filter(t=> String(t['Kode Mesin']||'').trim() === kodeAktif) : [];
+  // [FIX] Sebelumnya perbandingan Kode Mesin case-sensitive & harus persis sama.
+  // Kalau admin mengetik kode mesin di sheet Patrol_Checklist_Template dengan
+  // kapitalisasi/spasi sedikit berbeda dari Database Mesin (mis. "gto-01" vs
+  // "GTO-01"), checklist spesifik jadi tidak pernah cocok sama sekali dan mesin
+  // tsb selalu jatuh ke general checking saja walau sudah ada checklist
+  // spesifiknya. Sekarang dibandingkan case-insensitive & sudah di-trim di
+  // kedua sisi supaya lebih toleran terhadap variasi input seperti itu.
+  const kodeAktifNorm = kodeAktif.toLowerCase();
+  const specificItems = kodeAktifNorm ? PATROL_TEMPLATE.filter(t=> String(t['Kode Mesin']||'').trim().toLowerCase() === kodeAktifNorm) : [];
   specificItems.forEach(t=>{
     const kat = 'Spesifik Mesin — ' + (t['Kategori'] || 'Umum');
     if(!specificDef[kat]) specificDef[kat] = [];
@@ -17847,19 +18158,112 @@ function renderPatrolRiwayatList(){
     const jumlahTemuan = Array.isArray(r.findings) ? r.findings.length : 0;
     const scoreColor = score>=80 ? 'var(--green)' : score>=60 ? 'var(--amber)' : 'var(--red)';
     return `
-    <div class="card" style="margin-bottom:10px;">
+    <div class="card patrol-riwayat-item" data-report-id="${escapeHtml(r.id)}" style="margin-bottom:10px;cursor:pointer;">
       <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:center;">
         <div>
           <b>${escapeHtml(r.namaMesin||'-')}</b> <span style="color:var(--text-dim);">(${escapeHtml(r.kodeMesin||'-')})</span>
           <div class="sub" style="margin-top:2px;">${escapeHtml(r.tanggal||'-')} · Petugas: ${escapeHtml(r.petugas||'-')}</div>
         </div>
-        <div style="text-align:right;">
-          <div style="font-weight:700;color:${scoreColor};">Score: ${score}/100</div>
-          <div class="sub">Temuan: ${jumlahTemuan}</div>
+        <div style="text-align:right;display:flex;align-items:center;gap:10px;">
+          <div>
+            <div style="font-weight:700;color:${scoreColor};">Score: ${score}/100</div>
+            <div class="sub">Temuan: ${jumlahTemuan}</div>
+          </div>
+          <i class="ph-bold ph-caret-right" style="color:var(--text-dim);"></i>
         </div>
       </div>
     </div>`;
   }).join('');
+  // [FIX] Sebelumnya kartu riwayat cuma ringkasan tanpa bisa diklik sama sekali
+  // -- tidak ada cara melihat detail checklist per kategori & isi temuan dari
+  // sesi patrol tsb. Sekarang tiap kartu bisa diklik untuk membuka detail
+  // lengkap lewat modal yang sama dipakai fitur lain di aplikasi.
+  $$('.patrol-riwayat-item', holder).forEach(el=>{
+    el.addEventListener('click', ()=> openPatrolSessionDetail(el.dataset.reportId));
+  });
+}
+
+// Membangun ulang daftar label item checklist (spesifik mesin + general checking)
+// PERSIS dengan cara renderPatrolChecklist() menyusunnya saat sesi patrol itu
+// diisi -- supaya index status ('checklist' yang tersimpan per sesi hanya berupa
+// {kategori:{idx:status}}, tanpa teks item) bisa dipetakan balik ke teks
+// pertanyaan checklist aslinya untuk ditampilkan di detail Riwayat Patrol.
+// Catatan: kalau daftar checklist general/spesifik sudah diubah admin SETELAH
+// sesi patrol itu diisi, pemetaan teks di sini mengikuti konfigurasi checklist
+// yang berlaku SAAT INI (bisa sedikit berbeda dari saat pengisian) -- statusnya
+// sendiri tetap akurat karena tersimpan apa adanya per sesi.
+function patrolRebuildChecklistDefsFor(kodeMesin){
+  const specificDef = {};
+  const kodeNorm = String(kodeMesin||'').trim().toLowerCase();
+  const specificItems = kodeNorm ? PATROL_TEMPLATE.filter(t=> String(t['Kode Mesin']||'').trim().toLowerCase() === kodeNorm) : [];
+  specificItems.forEach(t=>{
+    const kat = 'Spesifik Mesin — ' + (t['Kategori'] || 'Umum');
+    if(!specificDef[kat]) specificDef[kat] = [];
+    const area = t['Area/Sub Area'] ? `[${t['Area/Sub Area']}] ` : '';
+    const standar = t['Kondisi Standar'] ? ` (Standar: ${t['Kondisi Standar']})` : '';
+    specificDef[kat].push(`${area}${t['Deskripsi Pemeriksaan']}${standar}`);
+  });
+  const genericDef = {};
+  const activeGenericSource = Object.keys(PATROL_GENERAL_CHECKLIST).length ? PATROL_GENERAL_CHECKLIST : PATROL_CHECKLIST_DEF;
+  Object.keys(activeGenericSource).forEach(k=>{ genericDef[k] = (activeGenericSource[k]||[]).slice(); });
+  return { ...specificDef, ...genericDef };
+}
+
+function openPatrolSessionDetail(reportId){
+  const r = (PM_REPORTS||[]).find(x=>x.id===reportId);
+  if(!r){ toast('Data riwayat patrol tidak ditemukan.', true); return; }
+  const score = (r.score!==undefined) ? r.score : '-';
+  const scoreColor = score>=80 ? 'var(--green)' : score>=60 ? 'var(--amber)' : 'var(--red)';
+  const defs = patrolRebuildChecklistDefsFor(r.kodeMesin);
+  const checklistObj = r.checklist || {};
+  const checklistHtml = Object.keys(checklistObj).length ? Object.keys(checklistObj).map(kategori=>{
+    const items = defs[kategori] || [];
+    const statuses = checklistObj[kategori] || {};
+    const rowsHtml = Object.keys(statuses).map(idx=>{
+      const label = items[idx] || `Item #${Number(idx)+1}`;
+      const st = statuses[idx];
+      const stLabel = (PATROL_STATUS_OPTS.find(o=>o.key===st)||{}).label || st;
+      return `<div style="display:flex;justify-content:space-between;gap:8px;padding:6px 0;border-bottom:1px solid var(--line);">
+        <div style="font-size:13px;flex:1 1 200px;">${escapeHtml(label)}</div>
+        <div style="font-size:12px;font-weight:700;padding:2px 8px;border-radius:6px;background:${patrolStatusColor(st)};color:var(--on-accent);white-space:nowrap;">${escapeHtml(stLabel||'-')}</div>
+      </div>`;
+    }).join('');
+    return `<div class="section-title" style="margin-top:14px;">${escapeHtml(kategori)}</div>${rowsHtml}`;
+  }).join('') : `<div style="font-size:12.5px;color:var(--text-dim);margin-top:8px;">Tidak ada detail checklist tersimpan untuk sesi ini.</div>`;
+
+  const findings = Array.isArray(r.findings) ? r.findings : [];
+  const prioColor = p=> p==='Tinggi' ? 'var(--red)' : p==='Sedang' ? 'var(--amber)' : 'var(--green)';
+  const findingsHtml = findings.length ? findings.map(f=>`
+    <div class="card" style="margin-bottom:8px;background:rgba(255,255,255,.02);">
+      <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;">
+        <div><b>${escapeHtml(f.kategori||'-')}</b> · <span style="color:${prioColor(f.prioritas)};font-weight:700;">${escapeHtml(f.prioritas||'-')}</span></div>
+        <span class="badge" style="background:var(--panel-2);border:1px solid var(--line);">${escapeHtml(f.status||'Open')}</span>
+      </div>
+      <div style="font-size:13px;margin-top:4px;">${escapeHtml(f.deskripsi||'-')}</div>
+      ${renderAttachGrid(f.files||[], 'Lampiran')}
+    </div>`).join('') : `<div style="font-size:12.5px;color:var(--text-dim);">Tidak ada temuan pada sesi patrol ini.</div>`;
+
+  $('#modal-content').innerHTML = `
+    <div class="modal-head">
+      <div>
+        <span class="badge" style="background:var(--panel-2);border:1px solid var(--line);">${escapeHtml(r.kodeMesin||'-')}</span>
+        <h2 style="font-family:var(--font-display);margin:8px 0 0 0;">${escapeHtml(r.namaMesin||'-')}</h2>
+      </div>
+      <button class="modal-close" id="btn-close-modal">✕</button>
+    </div>
+    <div class="detail-row"><div class="k">Tanggal</div><div class="v">${escapeHtml(r.tanggal||'-')} · ${escapeHtml(r.waktuPatrol||'-')}</div></div>
+    <div class="detail-row"><div class="k">Shift</div><div class="v">${escapeHtml(r.shift||'-')}</div></div>
+    <div class="detail-row"><div class="k">Petugas</div><div class="v">${escapeHtml(r.petugas||'-')}</div></div>
+    ${r.groupingTeam ? `<div class="detail-row"><div class="k">Grouping Team</div><div class="v">${escapeHtml(r.groupingTeam)}</div></div>` : ''}
+    <div class="detail-row"><div class="k">Machine Condition Score</div><div class="v" style="color:${scoreColor};font-weight:700;">${score}/100 (${escapeHtml(r.severity||'-')})</div></div>
+    <div class="section-title" style="margin-top:16px;"><i class="ph-bold ph-list-checks"></i> Hasil Checklist</div>
+    ${checklistHtml}
+    <div class="section-title" style="margin-top:18px;"><i class="ph-bold ph-warning"></i> Daftar Temuan (${findings.length})</div>
+    ${findingsHtml}
+  `;
+  $('#modal-bg').classList.add('active');
+  bindAttachGridClicks($('#modal-content'));
+  $('#btn-close-modal').addEventListener('click', closeModal);
 }
 
 /* ---- Tab 4: Statistik ---- */
@@ -24026,6 +24430,7 @@ function pmcOpenForm(type, id){
       pendingFiles[ff.key] = Array.from(input.files||[]);
       $(`[data-pmc-filepreview="${ff.key}"]`).innerHTML = pendingFiles[ff.key].map(f=>`<span class="chip">${escapeHtml(f.name)}</span>`).join('');
     });
+    enhanceFileDropWithCamera(drop);
   });
 
   $('#pmc-btn-save').addEventListener('click', ()=> pmcSaveForm(type, meta, pendingFiles));
@@ -24128,6 +24533,7 @@ function pmcOpenProgressLogForm(type, item){
     logFiles = Array.from(e.target.files||[]);
     $('#pmc-log-filepreview').innerHTML = logFiles.map(f=>`<span class="chip">${escapeHtml(f.name)}</span>`).join('');
   });
+  enhanceFileDropWithCamera($('#pmc-log-filedrop'));
   $('#pmc-log-save').addEventListener('click', async ()=>{
     const btn = $('#pmc-log-save');
     btn.disabled = true; btn.innerHTML = '<i class="ph-bold ph-spinner"></i> Menyimpan...';
