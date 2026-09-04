@@ -6364,10 +6364,18 @@ async function handleSavePermissions_(){
     return false;
   }
 
-  const matrixMatches = (expected, actual)=> Object.keys(expected).every(key =>
-    !!(actual && actual[key] && actual[key].Supervisor) === !!expected[key].Supervisor &&
-    !!(actual && actual[key] && actual[key].Technician) === !!expected[key].Technician
-  );
+  const matrixDiff = (expected, actual)=>{
+    const diff = [];
+    Object.keys(expected || {}).forEach(key=>{
+      ['Supervisor','Technician'].forEach(role=>{
+        const exp = !!(expected[key] && expected[key][role]);
+        const act = !!(actual && actual[key] && actual[key][role]);
+        if(exp !== act) diff.push(`${key} [${role}] dikirim=${exp}, diterima=${act}`);
+      });
+    });
+    return diff;
+  };
+  const matrixMatches = (expected, actual)=> matrixDiff(expected, actual).length === 0;
 
   const featuresPayload = (FEATURE_REGISTRY || [])
     .filter(f=>f && f.PermissionKey)
@@ -6384,30 +6392,51 @@ async function handleSavePermissions_(){
       permissions: updates,
       features: featuresPayload
     });
+    // V3 backend mengembalikan matrix hasil fresh-read langsung dari sheet.
+    // Verifikasi ini terjadi sebelum request GET terpisah, sehingga bila gagal
+    // berarti benar-benar ada mismatch penulisan, bukan cache browser/server.
+    if(mainRes && mainRes.permissions){
+      const directDiff = matrixDiff(updates, mainRes.permissions);
+      if(directDiff.length){
+        throw new Error('Verifikasi langsung Role_Permissions gagal: '+directDiff.slice(0,6).join('; ')+(directDiff.length>6?` (+${directDiff.length-6} lainnya)`:''));
+      }
+    }
 
     stage = 'menyimpan Low Cognitive permissions';
     if(Object.keys(lcUpdates).length){
       statusEl.textContent = 'Tahap 2/3 — menyimpan Low Cognitive...';
-      await apiPost({
+      const lcRes = await apiPost({
         action:'saveLcPermissions',
         actor: CURRENT_USER && CURRENT_USER.username ? CURRENT_USER.username : '',
         lcPermissions: lcUpdates
       });
+      if(lcRes && (lcRes.lcPermissions || lcRes.permissions)){
+        const directLc = lcRes.lcPermissions || lcRes.permissions;
+        const directLcDiff = matrixDiff(lcUpdates, directLc);
+        if(directLcDiff.length){
+          throw new Error('Verifikasi langsung Low Cognitive gagal: '+directLcDiff.slice(0,6).join('; ')+(directLcDiff.length>6?` (+${directLcDiff.length-6} lainnya)`:''));
+        }
+      }
     }
 
     stage = 'memverifikasi hasil dari Google Sheets';
     statusEl.textContent = 'Tahap 3/3 — memverifikasi dari Google Sheets...';
-    const verifyCalls = [apiGet('permissions')];
-    if(Object.keys(lcUpdates).length) verifyCalls.push(apiGet('lcPermissions'));
+    // fresh=1 memaksa backend membaca langsung Google Sheets tanpa CacheService.
+    // _ts membuat URL unik sehingga browser/proxy juga tidak bisa memakai GET lama.
+    const freshTag = Date.now().toString();
+    const verifyCalls = [apiGet('permissions', {fresh:'1', _ts:freshTag})];
+    if(Object.keys(lcUpdates).length) verifyCalls.push(apiGet('lcPermissions', {fresh:'1', _ts:freshTag}));
     const verified = await Promise.all(verifyCalls);
     const savedPermissions = verified[0] || {};
     const savedLc = Object.keys(lcUpdates).length ? (verified[1] || {}) : (window.LC_PERMISSIONS || {});
 
     if(!matrixMatches(updates, savedPermissions)){
-      throw new Error('Verifikasi Role_Permissions gagal: data yang dibaca kembali dari Google Sheets tidak sama dengan pilihan di layar.');
+      const diff = matrixDiff(updates, savedPermissions);
+      throw new Error('Verifikasi fresh Role_Permissions gagal: '+diff.slice(0,6).join('; ')+(diff.length>6?` (+${diff.length-6} lainnya)`:''));
     }
     if(Object.keys(lcUpdates).length && !matrixMatches(lcUpdates, savedLc)){
-      throw new Error('Verifikasi Low Cognitive gagal: data yang dibaca kembali dari Google Sheets tidak sama dengan pilihan di layar.');
+      const diff = matrixDiff(lcUpdates, savedLc);
+      throw new Error('Verifikasi fresh Low Cognitive gagal: '+diff.slice(0,6).join('; ')+(diff.length>6?` (+${diff.length-6} lainnya)`:''));
     }
 
     PERMISSIONS = savedPermissions;
