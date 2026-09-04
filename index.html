@@ -6083,7 +6083,7 @@ function showSettingLoginModal(onSuccess){
 function renderRbacAdminSection(){
   const holder = $('#rbac-admin-section');
   if(!holder) return;
-  if(!isSuperadmin()){ holder.innerHTML = ''; return; }
+  if(!isSettingAuthed()){ holder.innerHTML = ''; return; }
   holder.innerHTML = `
     <div class="card" style="margin-bottom:18px;">
       <div class="section-title"><i class="ph-bold ph-users"></i> User Management <span style="font-size:11px;color:var(--text-dim);font-weight:400;text-transform:none;letter-spacing:0;">(khusus Superadmin)</span></div>
@@ -6107,7 +6107,7 @@ function renderRbacAdminSection(){
 
     <div class="card" style="margin-bottom:18px;">
       <div class="section-title"><i class="ph-bold ph-shield-check"></i> Role Access Management <span style="font-size:11px;color:var(--text-dim);font-weight:400;text-transform:none;letter-spacing:0;">(khusus Superadmin)</span></div>
-      <div class="sub" style="margin-bottom:12px;">Atur menu, submenu, halaman &amp; fitur apa saja yang boleh diakses oleh role Supervisor dan Technician. Superadmin selalu full access dan tidak tercantum di sini karena tidak dapat dibatasi. Perubahan berlaku langsung setelah disimpan.</div>
+      <div class="sub" style="margin-bottom:12px;">Atur menu, submenu, halaman &amp; fitur yang boleh diakses oleh role Supervisor dan Technician. Konfigurasi ini berlaku ke setiap user sesuai role yang dipilih pada User Management. Superadmin selalu full access dan tidak dapat dibatasi. Perubahan berlaku langsung setelah disimpan dan diverifikasi dari server.</div>
       <div id="rbac-permission-table"></div>
       <button class="btn btn-sm btn-primary" id="btn-save-permissions" style="margin-top:12px;"><i class="ph-bold ph-floppy-disk"></i> Simpan Perubahan Akses</button>
       <span id="rp-status" style="margin-left:10px;font-size:12.5px;color:var(--text-dim);"></span>
@@ -6247,12 +6247,20 @@ async function handleAddUser_(){
 async function handleUpdateUserRole_(row){
   const username = row.dataset.username;
   const role = $('.ru-edit-role', row).value;
+  const btn = $('.ru-save-role', row);
+  if(btn) btn.disabled = true;
   try{
-    await apiPost({ action:'updateUser', actor: CURRENT_USER.username, user:{ username, role } });
-    toast(`Role "${username}" diperbarui menjadi ${role}.`);
-    renderRbacUserTable();
+    const res = await apiPost({ action:'updateUser', actor: CURRENT_USER.username, user:{ username, role } });
+    if(res && res.user && res.user.role && res.user.role !== role){
+      throw new Error('Verifikasi role gagal: server mengembalikan role yang berbeda.');
+    }
+    toast(`Role "${username}" diperbarui menjadi ${role}. User tersebut perlu login ulang agar role baru aktif.`);
+    await renderRbacUserTable();
   }catch(err){
     toast(err.message || 'Gagal mengubah role.', true);
+    await renderRbacUserTable();
+  }finally{
+    if(btn && document.body.contains(btn)) btn.disabled = false;
   }
 }
 
@@ -6333,54 +6341,86 @@ async function renderRbacPermissionTable(){
 
 async function handleSavePermissions_(){
   const statusEl = $('#rp-status');
+  const saveBtn = $('#btn-save-permissions');
   const updates = {};
+  const lcUpdates = {};
   $$('#rbac-permission-table tr[data-permkey]').forEach(row=>{
     const key = row.dataset.permkey;
-    updates[key] = {
-      Supervisor: $('.rp-cb-supervisor', row).checked,
-      Technician: $('.rp-cb-technician', row).checked
-    };
+    const sup = $('.rp-cb-supervisor', row);
+    const tech = $('.rp-cb-technician', row);
+    if(!key || !sup || !tech) return;
+    updates[key] = { Supervisor: !!sup.checked, Technician: !!tech.checked };
+    const lcSup = $('.lc-cb-supervisor', row);
+    const lcTech = $('.lc-cb-technician', row);
+    if(lcSup && lcTech) lcUpdates[key] = { Supervisor: !!lcSup.checked, Technician: !!lcTech.checked };
   });
-  statusEl.textContent = 'Menyimpan...';
+  if(!Object.keys(updates).length){ toast('Tidak ada konfigurasi akses yang dapat disimpan.', true); return false; }
+
+  const matrixMatches = (expected, actual)=> Object.keys(expected).every(key =>
+    !!(actual && actual[key] && actual[key].Supervisor) === !!expected[key].Supervisor &&
+    !!(actual && actual[key] && actual[key].Technician) === !!expected[key].Technician
+  );
+
+  statusEl.textContent = 'Menyimpan & memverifikasi...';
+  if(saveBtn) saveBtn.disabled = true;
   try{
-    // Kirim juga daftar fitur hasil scan DOM saat ini (FEATURE_REGISTRY),
-    // supaya backend bisa meng-upsert Feature_Registry & Role_Permissions
-    // untuk menu/tab yang baru terdeteksi otomatis tapi belum pernah
-    // punya baris di sheet — sebelumnya key baru ini disimpan diam-diam
-    // gagal karena backend cuma meng-update baris yang sudah ada.
-    const res = await apiPost({
-      action:'savePermissions',
-      actor: CURRENT_USER.username,
-      permissions: updates,
-      features: FEATURE_REGISTRY.map(f=>({ PermissionKey:f.PermissionKey, Label:f.Label, Group:f.Group }))
-    });
-    PERMISSIONS = res.permissions || updates;
+    const featuresPayload = FEATURE_REGISTRY.map(f=>({ PermissionKey:f.PermissionKey, Label:f.Label, Group:f.Group }));
+    let res;
+    try{
+      // Endpoint baru: RBAC utama + Low Cognitive disimpan dalam SATU transaksi
+      // backend, dikunci dengan ScriptLock, lalu dibaca ulang untuk verifikasi.
+      res = await apiPost({
+        action:'saveRoleAccessConfig',
+        actor: CURRENT_USER.username,
+        permissions: updates,
+        lcPermissions: lcUpdates,
+        features: featuresPayload
+      });
+    }catch(atomicErr){
+      // Kompatibilitas saat frontend baru terpasang sebelum code.gs baru
+      // selesai di-deploy. Hanya fallback bila endpoint memang belum dikenal.
+      if(!/UNKNOWN_ACTION|Action tidak terdaftar/i.test(atomicErr.message||'')) throw atomicErr;
+      const mainRes = await apiPost({ action:'savePermissions', actor:CURRENT_USER.username, permissions:updates, features:featuresPayload });
+      let lcRes = { lcPermissions: lcUpdates, permissions: lcUpdates };
+      if(Object.keys(lcUpdates).length){
+        lcRes = await apiPost({ action:'saveLcPermissions', actor:CURRENT_USER.username, lcPermissions:lcUpdates });
+      }
+      res = {
+        permissions: mainRes.permissions || updates,
+        lcPermissions: lcRes.lcPermissions || lcRes.permissions || lcUpdates,
+        features: mainRes.features || []
+      };
+    }
+
+    const savedPermissions = res.permissions || updates;
+    const savedLc = res.lcPermissions || lcUpdates;
+    if(!matrixMatches(updates, savedPermissions)){
+      throw new Error('Verifikasi gagal: konfigurasi akses yang dibaca ulang dari server tidak sama dengan pilihan di layar.');
+    }
+    if(Object.keys(lcUpdates).length && !matrixMatches(lcUpdates, savedLc)){
+      throw new Error('Verifikasi gagal: konfigurasi Low Cognitive yang dibaca ulang dari server tidak sama dengan pilihan di layar.');
+    }
+
+    PERMISSIONS = savedPermissions;
     if(res.features && res.features.length) FEATURE_REGISTRY = mergeFeatureRegistry(res.features);
-    // [FIX] Sebelumnya PERMISSIONS/FEATURE_REGISTRY yang baru hanya diupdate
-    // di memori (variabel JS), TIDAK PERNAH ditulis ulang ke localStorage.
-    // Akibatnya begitu tab/browser ditutup lalu dibuka lagi, restoreRbacSession_()
-    // sempat unlock UI memakai cache localStorage LAMA (dari sesi login
-    // sebelumnya) dulu sebelum sempat menyegarkan dari server -- dan kalau
-    // penyegaran background itu gagal/lambat (koneksi tidak stabil), akses
-    // yang baru saja disimpan Superadmin terlihat "hilang"/tidak tersimpan,
-    // padahal sebenarnya sudah tersimpan benar di Google Sheets. Memanggil
-    // cacheRbacSession_() di sini memastikan localStorage SELALU langsung
-    // sinkron dengan hasil simpan terbaru, tidak bergantung pada refresh
-    // background saat sesi dipulihkan nanti.
+    window.LC_PERMISSIONS = savedLc;
+    try{ localStorage.setItem('logbook_lc_permissions', JSON.stringify(savedLc)); }catch(e){}
     cacheRbacSession_();
-    statusEl.textContent = 'Tersimpan.';
-    toast('Perubahan akses berhasil disimpan dan langsung berlaku.');
+    statusEl.textContent = 'Tersimpan & terverifikasi.';
+    toast('Perubahan Role Access berhasil disimpan dan diverifikasi dari server.');
     applyRbacToUi();
+    return true;
   }catch(err){
-    statusEl.textContent = '';
-    toast(err.message || 'Gagal menyimpan perubahan akses.', true);
-    // [FIX] Lempar ulang error ini supaya pemanggil (mis. wrapper Low
-    // Cognitive Mode yang membungkus fungsi ini) TAHU penyimpanan akses
-    // utama gagal, dan tidak diam-diam melanjutkan langkah berikutnya
-    // seolah semuanya berhasil -- lihat penjelasan di wrappedSave.
-    throw err;
+    statusEl.textContent = 'Gagal menyimpan.';
+    toast((err && err.message) ? err.message : 'Gagal menyimpan perubahan akses.', true);
+    return false;
+  }finally{
+    if(saveBtn) saveBtn.disabled = false;
   }
 }
+// Penanda agar patch Low Cognitive lama di bagian bawah file TIDAK membungkus
+// fungsi ini lagi. Fungsi di atas sudah menyimpan RBAC + LC secara atomik.
+handleSavePermissions_.__lcAtomic = true;
 
 let SPAREPART_STATUS = {}; // {entryId: 'DONE' | 'PENDING'} — status validasi collect admin gudang
 
@@ -6978,7 +7018,14 @@ let APP_ONLINE_STATUS = navigator.onLine;
 
 function loadSyncQueue_(){ try{ return JSON.parse(localStorage.getItem(LS_SYNC_QUEUE_KEY) || '[]'); }catch(e){ return []; } }
 function saveSyncQueue_(q){ localStorage.setItem(LS_SYNC_QUEUE_KEY, JSON.stringify(q)); renderOfflineBanner(); }
+function isSecurityConfigAction_(action){
+  return ['savePermissions','saveLcPermissions','saveRoleAccessConfig','createUser','updateUser','resetPassword','setUserActive','deleteUser'].includes(String(action||''));
+}
 function queueForSync_(payload){
+  // Konfigurasi keamanan harus online-only. Jangan simpan request role/permission
+  // ke antrean offline karena request lama dapat menimpa konfigurasi terbaru saat
+  // koneksi pulih beberapa menit/jam kemudian.
+  if(isSecurityConfigAction_(payload && payload.action)) return;
   const q = loadSyncQueue_();
   const queuedPayload = {...payload};
   delete queuedPayload.sessionToken;
@@ -6998,7 +7045,9 @@ async function flushSyncQueue_(){
   const q = loadSyncQueue_();
   if(!q.length) return;
   const remaining = [];
+  let discardedSecurityConfig = 0;
   for(const item of q){
+    if(isSecurityConfigAction_(item && item.payload && item.payload.action)){ discardedSecurityConfig++; continue; }
     try{
       if(!SESSION_TOKEN) throw new Error('AUTH_REQUIRED');
       const requestToken = (SETTING_AUTH_OK && SETTING_SESSION_TOKEN) ? SETTING_SESSION_TOKEN : SESSION_TOKEN;
@@ -7009,7 +7058,7 @@ async function flushSyncQueue_(){
       remaining.push(item); // masih gagal, coba lagi di kesempatan berikutnya
     }
   }
-  const successCount = q.length - remaining.length;
+  const successCount = q.length - remaining.length - discardedSecurityConfig;
   saveSyncQueue_(remaining);
   if(successCount > 0){
     setAppOnlineStatus(true);
@@ -23350,7 +23399,7 @@ if(typeof window.renderRbacPermissionTable === 'function' && !window.renderRbacP
 
 // Bungkus handleSavePermissions_ supaya menyimpan matrix LC bersamaan
 // dengan menyimpan akses RBAC biasa (satu tombol "Simpan Perubahan Akses").
-if(typeof window.handleSavePermissions_ === 'function' && !window.handleSavePermissions_.__lcWrapped){
+if(typeof window.handleSavePermissions_ === 'function' && !window.handleSavePermissions_.__lcAtomic && !window.handleSavePermissions_.__lcWrapped){
   const _origSavePermissions = window.handleSavePermissions_;
   const wrappedSave = async function(){
     const lcUpdates = {};
