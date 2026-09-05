@@ -411,6 +411,15 @@ body{
   min-height:100vh;
   -webkit-font-smoothing:antialiased;
   overflow-x:hidden;
+  /* [FIX] viewport-fit=cover (dipakai supaya PWA fullscreen bisa menggambar
+     sampai ke tepi layar) membuat konten melebar sampai ke BELAKANG Dynamic
+     Island/notch/status bar iPhone. Tanpa padding ini, area paling atas
+     (tombol, menu, dsb) jadi ketutupan & tidak bisa diklik karena secara
+     visual tertindih Dynamic Island/jam/sinyal. safe-area-inset-top bernilai
+     0 di browser biasa (tidak berpengaruh di Android/desktop/tab browser
+     biasa) dan hanya aktif saat dibuka sebagai PWA fullscreen di perangkat
+     bernotch, jadi aman ditambahkan secara global. */
+  padding-top: env(safe-area-inset-top, 0px);
 }
 body::before{
   content:'';
@@ -1193,7 +1202,7 @@ input[type="number"]{-moz-appearance:textfield;}
   transform:translateX(100%);transition:transform var(--trans);box-shadow:-10px 0 30px rgba(0,0,0,.4);
 }
 .copilot-bg.active .copilot-panel{transform:translateX(0);}
-.copilot-head{display:flex;justify-content:space-between;align-items:flex-start;padding:18px 18px 12px 18px;border-bottom:1px solid var(--line);}
+.copilot-head{display:flex;justify-content:space-between;align-items:flex-start;padding:calc(18px + env(safe-area-inset-top,0px)) 18px 12px 18px;border-bottom:1px solid var(--line);}
 .copilot-title{font-family:var(--font-display);font-size:18px;font-weight:700;}
 .copilot-ctx{font-size:11.5px;color:var(--text-dim);margin-top:4px;font-family:var(--font-mono);}
 .copilot-scope-row{display:flex;gap:8px;padding:12px 18px;border-bottom:1px solid var(--line);}
@@ -2053,6 +2062,13 @@ input[type="number"]{-moz-appearance:textfield;}
        drawer dibuka di HP/tablet, sehingga logout tidak bisa diklik. */
     z-index:75;
     display:flex;flex-direction:column;
+    /* [FIX] .sidebar disini "position:fixed;top:0" -- TIDAK ikut terdorong
+       oleh padding-top di body (fixed positioning dihitung dari viewport,
+       bukan dari alur dokumen). Tanpa ini, item paling atas drawer
+       (logo/brand) tertindih Dynamic Island/notch/status bar iPhone saat
+       app dibuka sebagai PWA fullscreen, sehingga area itu tidak bisa
+       diklik/disentuh. */
+    padding-top: calc(22px + env(safe-area-inset-top,0px));
   }
   .sidebar.open{transform:translateX(0);}
   /* [FIX-2] Ternyata z-index:75 di atas TIDAK PERNAH cukup, karena
