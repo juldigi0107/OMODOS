@@ -3002,7 +3002,7 @@ pre, code{ white-space:pre-wrap; word-break:break-word; overflow-wrap:anywhere; 
     <h1 class="omodos-wordmark">OMODOS</h1>
     <div class="omodos-tagline">OUR <b class="c-blue">MOTTO</b>. OUR <b class="c-pink">DUTY</b>. OUR <b class="c-amber">STRATEGY</b>.</div>
     <div class="omodos-divider"><span></span><i></i><span></span></div>
-    <div class="sub-title">Smart Maintenance Reporting Platform - Packaging Offset</div>
+    <div class="sub-title">Smart Maintenance Reporting Platform - Packaging Offset BMJ</div>
     <form id="form-login" autocomplete="off">
       <div class="field">
         <label>Username</label>
@@ -3017,8 +3017,7 @@ pre, code{ white-space:pre-wrap; word-break:break-word; overflow-wrap:anywhere; 
       </button>
       <div class="login-err" id="login-err"></div>
     </form>
-    <div class="omodos-divider"><span></span><i></i><span></span></div>
-    <div class="login-foot">PT BUKIT MURIA JAYA // Created by IDJ</div>
+    <div class="login-foot">PT BUKIT MURIA JAYA // © 2026 IDJ. All Rights Reserved.</div>
   </div>
 </div>
 
@@ -3055,7 +3054,7 @@ pre, code{ white-space:pre-wrap; word-break:break-word; overflow-wrap:anywhere; 
           <circle cx="50" cy="50" r="38" fill="none" stroke="#FFC20E" stroke-width="14" stroke-dasharray="15.47 223.29" stroke-dashoffset="-127.10" transform="rotate(-90 50 50)"/>
         </svg>
       </div>
-      <div class="txt"><b>OMODOS</b><span>Packaging Offset &middot; PT Bukit Muria Jaya</span></div>
+      <div class="txt"><b>OMODOS</b><span>Packaging Offset &middot; BMJ</span></div>
     </div>
 
     <!-- ============ ZERO-EFFORT NAV: 5 kategori utama, maks 2 level ============
@@ -5279,7 +5278,7 @@ pre, code{ white-space:pre-wrap; word-break:break-word; overflow-wrap:anywhere; 
           </div>
           <div class="field">
             <label>Nama Supervisor (Penilai)</label>
-            <input type="text" id="pi-ss-assessor" placeholder="cth: Havrie Sjachroel">
+            <input type="text" id="pi-ss-assessor" placeholder="cth: Irwan Depi Juliana">
           </div>
           <div class="field">
             <label>Tanggal Penilaian</label>
@@ -5652,6 +5651,43 @@ let MACHINES = [];
 let PERSONIL = [];
 let PATROL_TEMPLATE = []; // item checklist patrol spesifik per mesin, dari sheet Patrol_Checklist_Template
 let KB_ENTRIES = [];
+
+/* ---------------- [PERF FIX] SEED SEKALI, LALU DELTA SAJA ----------------
+   Sebelumnya SETIAP kali aplikasi dibuka (termasuk di tablet high-spec),
+   loadAll() mengunduh ULANG seluruh Logbook + master data dari nol lewat
+   Google Apps Script -- yang lambat karena Apps Script (bukan tabletnya)
+   yang jadi bottleneck: baca ribuan baris Google Sheets tiap request.
+   Sekarang: kunjungan PERTAMA di gadget tersebut tetap unduh penuh
+   ("seed") dan disimpan ke localStorage. Kunjungan-kunjungan berikutnya:
+   1) render dulu dari cache localStorage (instan, tanpa nunggu network),
+   2) di background, minta HANYA data yang berubah sejak kunjungan
+      terakhir (delta), gabungkan ke cache, simpan lagi.
+   Untuk Logbook (paling berat & paling sering berubah) delta betulan
+   dibaca dari server pakai parameter 'since' (lihat getLogbookList_ di
+   code.gs). Untuk master data yang jarang berubah (Machines, Personil,
+   Patrol Template) cukup pola stale-while-revalidate: tampilkan cache
+   lama secepatnya, lalu diam-diam disegarkan penuh di background --
+   sudah cukup terasa instan karena tidak pernah menunggu network sama
+   sekali untuk BISA menampilkan sesuatu. */
+const LS_SEED_PREFIX = 'omodos_seed_v1_';
+function loadSeedCache_(key){
+  try{ const raw = localStorage.getItem(LS_SEED_PREFIX+key); return raw ? JSON.parse(raw) : null; }
+  catch(e){ return null; }
+}
+function saveSeedCache_(key, payload){
+  try{ localStorage.setItem(LS_SEED_PREFIX+key, JSON.stringify(payload)); }
+  catch(e){ /* localStorage penuh/nonaktif -- lewati diam-diam, app tetap jalan pakai memori */ }
+}
+// Upsert-by-ID: dipakai untuk menggabungkan hasil delta Logbook ke cache
+// lama tanpa duplikat, plus membuang entri yang sudah dihapus (deletedIds).
+function mergeByIdInto_(list, changed, deletedIds, idField){
+  idField = idField || 'ID';
+  const byId = {};
+  list.forEach(item=>{ if(item && item[idField]!==undefined) byId[item[idField]] = item; });
+  (changed||[]).forEach(item=>{ if(item && item[idField]!==undefined) byId[item[idField]] = item; });
+  (deletedIds||[]).forEach(id=>{ delete byId[id]; });
+  return Object.values(byId);
+}
 
 /* ---------------- [FITUR BARU] SOURCE OF TRUTH CUTOFF (LOGBOOK) ----------------
    Seluruh data logbook hasil EXPORT dari OneNote (yaitu semua entri dengan
@@ -6381,46 +6417,50 @@ async function handleSavePermissions_(){
     .filter(f=>f && f.PermissionKey)
     .map(f=>({ PermissionKey:String(f.PermissionKey), Label:String(f.Label||f.PermissionKey), Group:String(f.Group||'Umum') }));
 
-  statusEl.textContent = 'Tahap 1/3 — menyimpan akses...';
+  statusEl.textContent = 'Tahap 1/2 — menyimpan akses (atomik)...';
   if(saveBtn) saveBtn.disabled = true;
-  let stage = 'menyimpan Role_Permissions';
+  let stage = 'menyimpan Role Access (Role_Permissions + Low Cognitive)';
   try{
-    // GitHub Pages -> Apps Script: gunakan endpoint kompatibel backend lama.
+    // [FIX ROOT CAUSE] Sebelumnya di sini ada DUA request terpisah
+    // (savePermissions lalu saveLcPermissions). Kalau request kedua gagal
+    // (timeout/rate limit/koneksi putus) SETELAH request pertama sukses,
+    // Role_Permissions di Google Sheets sudah berubah walau UI melaporkan
+    // "Gagal" -- akun lain yang refresh permission di antara dua request
+    // itu bisa mendapat kombinasi matrix yang tidak pernah benar-benar
+    // dimaksud Superadmin (setengah config lama, setengah config baru).
+    // Ini persis skenario yang membuat menu di akun lain tidak sesuai
+    // dengan hasil config di akun admin. Backend SUDAH punya endpoint
+    // atomik untuk ini (saveRoleAccessConfig_, menulis Role_Permissions +
+    // Low_Cognitive_Permissions di bawah SATU ScriptLock, dengan rollback
+    // best-effort bila salah satu gagal) tapi sebelumnya tidak pernah
+    // dipanggil dari sini. Sekarang dipakai supaya penyimpanan benar-benar
+    // satu transaksi.
     const mainRes = await apiPost({
-      action:'savePermissions',
+      action:'saveRoleAccessConfig',
       actor: CURRENT_USER && CURRENT_USER.username ? CURRENT_USER.username : '',
       permissions: updates,
+      lcPermissions: lcUpdates,
       features: featuresPayload
     });
-    // V3 backend mengembalikan matrix hasil fresh-read langsung dari sheet.
-    // Verifikasi ini terjadi sebelum request GET terpisah, sehingga bila gagal
-    // berarti benar-benar ada mismatch penulisan, bukan cache browser/server.
+    // Backend mengembalikan matrix hasil fresh-read langsung dari sheet
+    // (bukan echo payload), jadi verifikasi ini mendeteksi mismatch
+    // penulisan sungguhan, bukan cache browser/server.
     if(mainRes && mainRes.permissions){
       const directDiff = matrixDiff(updates, mainRes.permissions);
       if(directDiff.length){
         throw new Error('Verifikasi langsung Role_Permissions gagal: '+directDiff.slice(0,6).join('; ')+(directDiff.length>6?` (+${directDiff.length-6} lainnya)`:''));
       }
     }
-
-    stage = 'menyimpan Low Cognitive permissions';
-    if(Object.keys(lcUpdates).length){
-      statusEl.textContent = 'Tahap 2/3 — menyimpan Low Cognitive...';
-      const lcRes = await apiPost({
-        action:'saveLcPermissions',
-        actor: CURRENT_USER && CURRENT_USER.username ? CURRENT_USER.username : '',
-        lcPermissions: lcUpdates
-      });
-      if(lcRes && (lcRes.lcPermissions || lcRes.permissions)){
-        const directLc = lcRes.lcPermissions || lcRes.permissions;
-        const directLcDiff = matrixDiff(lcUpdates, directLc);
-        if(directLcDiff.length){
-          throw new Error('Verifikasi langsung Low Cognitive gagal: '+directLcDiff.slice(0,6).join('; ')+(directLcDiff.length>6?` (+${directLcDiff.length-6} lainnya)`:''));
-        }
+    if(mainRes && Object.keys(lcUpdates).length && (mainRes.lcPermissions || mainRes.permissions)){
+      const directLc = mainRes.lcPermissions || {};
+      const directLcDiff = matrixDiff(lcUpdates, directLc);
+      if(directLcDiff.length){
+        throw new Error('Verifikasi langsung Low Cognitive gagal: '+directLcDiff.slice(0,6).join('; ')+(directLcDiff.length>6?` (+${directLcDiff.length-6} lainnya)`:''));
       }
     }
 
     stage = 'memverifikasi hasil dari Google Sheets';
-    statusEl.textContent = 'Tahap 3/3 — memverifikasi dari Google Sheets...';
+    statusEl.textContent = 'Tahap 2/2 — memverifikasi dari Google Sheets...';
     // fresh=1 memaksa backend membaca langsung Google Sheets tanpa CacheService.
     // _ts membuat URL unik sehingga browser/proxy juga tidak bisa memakai GET lama.
     const freshTag = Date.now().toString();
@@ -7013,7 +7053,22 @@ async function apiPost(payload){
   // berlaku. Kalau gagal (offline/server belum terjangkau), sesi TETAP
   // aktif memakai cache terakhir — pengguna tidak dipaksa logout hanya
   // karena satu kali gagal terhubung.
-  if(!WEB_APP_URL) return;
+  await refreshRbacFromServer_();
+})();
+
+// [FIX ROOT CAUSE] Sebelumnya PERMISSIONS/FEATURE_REGISTRY di akun yang
+// SUDAH login hanya disegarkan SEKALI, tepat saat halaman pertama dibuka
+// (restoreRbacSession_ di atas). Kalau tab akun lain dibiarkan terbuka
+// lama, atau device-nya dikunci lalu dibuka lagi tanpa reload penuh,
+// perubahan yang Superadmin simpan di Role Access Management tidak akan
+// pernah terlihat sampai user itu logout+login ulang atau menutup total
+// lalu membuka ulang tab-nya -- inilah salah satu sumber laporan "menu
+// yang muncul tidak sesuai config admin" di akun lain. Fungsi ini
+// diekstrak supaya bisa dipanggil ulang secara berkala DAN setiap kali
+// tab kembali terlihat (mis. dibuka lagi setelah di-minimize di HP),
+// tanpa mengubah perilaku restoreRbacSession_ di atas sama sekali.
+async function refreshRbacFromServer_(){
+  if(!CURRENT_USER || !SESSION_TOKEN || !WEB_APP_URL) return;
   try{
     const [features, permissions] = await Promise.all([
       apiGet('features'),
@@ -7026,7 +7081,13 @@ async function apiPost(payload){
   }catch(e){
     // Biarkan sesi tetap aktif dengan cache terakhir; tidak melakukan apa-apa.
   }
-})();
+}
+// Segarkan tiap 3 menit selagi tab terbuka & terlihat, dan segera saat tab
+// kembali aktif (mis. user balik dari aplikasi lain di HP). Ringan karena
+// permission/feature di backend sudah di-cache 10 menit (CacheService),
+// jadi tidak membebani Google Sheets.
+setInterval(()=>{ if(document.visibilityState === 'visible') refreshRbacFromServer_(); }, 3*60*1000);
+document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState === 'visible') refreshRbacFromServer_(); });
 
 /* ---------------- LOGOUT ----------------
    Membersihkan sesi RBAC (CURRENT_USER, permission, feature registry) &
@@ -7469,7 +7530,38 @@ async function loadAll(){
   // PATCHED v2.1 - BOOTSTRAP 1-call untuk Home, background lazy untuk sisanya
   if(!WEB_APP_URL){ renderConfigBanner(); return; }
   let homeRendered = false;
-  try{
+
+  // [PERF FIX] Hydrate instan dari localStorage KALAU gadget ini sudah
+  // pernah seed sebelumnya -- Home/Logbook langsung tampil dari data lama
+  // tanpa menunggu satu pun request jaringan, baru disegarkan di
+  // background. Kalau ini kunjungan pertama di gadget tsb (belum ada
+  // cache), lewati -- alur bootstrap lama di bawah tetap yang mengisi
+  // pertama kali (proses "seed").
+  const seedEntries = loadSeedCache_('entries');
+  const seedMachines = loadSeedCache_('machines');
+  const seedPersonil = loadSeedCache_('personil');
+  const seedPatrol = loadSeedCache_('patrolTemplate');
+  if(seedEntries && seedMachines){
+    ENTRIES = seedEntries.data || [];
+    MACHINES = seedMachines.data || [];
+    if(seedPersonil) PERSONIL = seedPersonil.data || [];
+    if(seedPatrol) PATROL_TEMPLATE = seedPatrol.data || [];
+    populateMachineSelects();
+    engPopulateAreaSelect();
+    populateAiFilters();
+    updateSidebarCounts();
+    populatePelaporSelect();
+    renderConfigBanner();
+    if(typeof renderDashboardView==='function'){ try{ renderDashboardView(); homeRendered=true; }catch(e){} }
+    if(typeof renderHomeSmartResume==='function'){ try{ renderHomeSmartResume(); }catch(e){} }
+  }
+
+  // [PERF FIX] Kalau gadget ini SUDAH pernah seed (di atas), lewati seluruh
+  // proses bootstrap/full-fetch yang berat ini -- Home sudah tampil dari
+  // cache. Penyegaran data selanjutnya ditangani oleh delta-sync di blok
+  // "background lazy load" di bawah (hanya minta yang berubah). Blok ini
+  // HANYA jalan penuh untuk kunjungan PERTAMA di gadget tsb (proses seed).
+  if(!(seedEntries && seedMachines)) try{
     // Coba endpoint baru bootstrap (1 request = machines + personil + recentEntries)
     let boot = null;
     try{
@@ -7514,6 +7606,16 @@ async function loadAll(){
       if(typeof renderHomeSmartResume==='function'){
         try{ renderHomeSmartResume(); }catch(e){}
       }
+      // [PERF FIX] Simpan hasil kunjungan pertama ini sebagai seed lokal.
+      // Catatan: bootstrap hanya mengirim recentEntries (>= SOT cutoff),
+      // jadi seed 'entries' di sini masih ringkas -- lengkap akan disimpan
+      // ulang oleh proses lazy-load histori penuh di blok background di
+      // bawah begitu selesai, supaya seed benar-benar berisi semua histori.
+      const seedTime = new Date().toISOString();
+      saveSeedCache_('entries', { data: ENTRIES, lastSync: seedTime });
+      saveSeedCache_('machines', { data: MACHINES, lastSync: seedTime });
+      if(PERSONIL && PERSONIL.length) saveSeedCache_('personil', { data: PERSONIL, lastSync: seedTime });
+      if(PATROL_TEMPLATE && PATROL_TEMPLATE.length) saveSeedCache_('patrolTemplate', { data: PATROL_TEMPLATE, lastSync: seedTime });
     }else{
       // Fallback lama: parallel list + machines
       const [entries, machines] = await Promise.all([apiGet('list'), apiGet('machines')]);
@@ -7527,6 +7629,9 @@ async function loadAll(){
       if(typeof renderDashboardView==='function'){
         try{ renderDashboardView(); homeRendered=true; }catch(e){}
       }
+      const seedTimeFb = new Date().toISOString();
+      saveSeedCache_('entries', { data: ENTRIES, lastSync: seedTimeFb });
+      saveSeedCache_('machines', { data: MACHINES, lastSync: seedTimeFb });
     }
   }catch(err){
     toast('Gagal memuat data: ' + err.message, true);
@@ -7534,22 +7639,55 @@ async function loadAll(){
 
   // Background lazy load - tidak blok Home
   setTimeout(async ()=>{
-    try{ 
-      if(!PERSONIL || !PERSONIL.length){
-        try{ PERSONIL = await apiGet('personil'); }catch(e){ PERSONIL = PERSONIL||[]; }
-        populatePelaporSelect();
-      }
-    }catch(e){}
-    try{ if(!PATROL_TEMPLATE || !PATROL_TEMPLATE.length){ PATROL_TEMPLATE = await apiGet('patrolChecklistTemplate'); } }catch(e){ PATROL_TEMPLATE = PATROL_TEMPLATE||[]; }
-    // [PERF FIX] Home/bootstrap sekarang cuma mengirim entri Logbook >= SOT
-    // supaya cepat tampil. Histori PENUH (termasuk data historis OneNote
-    // sebelum SOT_CUTOFF_DATE, dipakai fitur pembanding historis seperti
-    // Expert Finder/Machine Wikipedia) dimuat lazy di sini di background,
-    // lalu digabung ke ENTRIES tanpa memblokir Home.
+    // [PERF FIX] Master data (Machines/Personil/Patrol Template) biasanya
+    // kecil & jarang berubah, tapi kalau gadget sudah dihydrate dari cache
+    // (jadi array-nya SUDAH terisi), kondisi lama "if kosong baru fetch" di
+    // bawah ini tidak pernah jalan lagi -- data jadi stale selamanya sampai
+    // cache dihapus manual. Karena itu ketiganya tetap disegarkan penuh
+    // sekali per sesi di background (tidak memblokir Home), lalu ditulis
+    // ulang ke cache -- ukurannya kecil jadi murah, tidak seperti Logbook.
+    try{ MACHINES = await apiGet('machines'); populateMachineSelects(); saveSeedCache_('machines', { data: MACHINES, lastSync: new Date().toISOString() }); }catch(e){}
     try{
-      const fullEntries = await apiGet('list');
-      if(Array.isArray(fullEntries) && fullEntries.length){
-        ENTRIES = fullEntries.sort((a,b)=> new Date(b['Timestamp Input']) - new Date(a['Timestamp Input']));
+      PERSONIL = await apiGet('personil');
+      saveSeedCache_('personil', { data: PERSONIL, lastSync: new Date().toISOString() });
+      populatePelaporSelect();
+    }catch(e){ PERSONIL = PERSONIL||[]; }
+    try{
+      PATROL_TEMPLATE = await apiGet('patrolChecklistTemplate');
+      saveSeedCache_('patrolTemplate', { data: PATROL_TEMPLATE, lastSync: new Date().toISOString() });
+    }catch(e){ PATROL_TEMPLATE = PATROL_TEMPLATE||[]; }
+    // [PERF FIX - DELTA SYNC] Sebelumnya baris ini SELALU mengunduh ULANG
+    // seluruh histori Logbook (termasuk data historis OneNote) di setiap
+    // kunjungan, walau tidak ada satu baris pun yang berubah -- inilah
+    // sumber utama loading yang lambat & berat di tablet. Sekarang: kalau
+    // gadget ini sudah pernah seed penuh sebelumnya, cukup minta baris yang
+    // berubah SEJAK kunjungan terakhir (parameter 'since' -> getLogbookList_
+    // di code.gs), gabungkan ke cache lama, lalu simpan lagi. Kalau ini
+    // gadget baru (belum pernah seed histori penuh), tetap ambil semuanya
+    // SATU KALI dan itulah yang jadi seed untuk seterusnya.
+    try{
+      const entrySeed = loadSeedCache_('entries');
+      const hasFullSeed = !!(entrySeed && entrySeed.fullySeeded);
+      if(hasFullSeed){
+        const since = entrySeed.lastSync;
+        const delta = await apiGet('list', { since: since });
+        if(delta && (Array.isArray(delta.changed) || Array.isArray(delta.deletedIds))){
+          if((delta.changed && delta.changed.length) || (delta.deletedIds && delta.deletedIds.length)){
+            ENTRIES = mergeByIdInto_(ENTRIES, delta.changed, delta.deletedIds, 'ID')
+              .sort((a,b)=> new Date(b['Timestamp Input']) - new Date(a['Timestamp Input']));
+            try{ updateSidebarCounts(); }catch(e){}
+            try{
+              if(document.getElementById('view-utama') && document.getElementById('view-utama').classList.contains('active') && typeof renderUtama==='function'){
+                renderUtama();
+              }
+            }catch(e){}
+          }
+          saveSeedCache_('entries', { data: ENTRIES, lastSync: delta.serverTime || new Date().toISOString(), fullySeeded: true });
+        }
+      }else{
+        const fullEntries = await apiGet('list');
+        if(Array.isArray(fullEntries) && fullEntries.length){
+          ENTRIES = fullEntries.sort((a,b)=> new Date(b['Timestamp Input']) - new Date(a['Timestamp Input']));
         // [FIX] Sebelumnya ENTRIES di-update di sini tapi TIDAK ADA yang
         // memberitahu UI ("cnt-utama" di sidebar & halaman Lihat Logbook)
         // kalau data sudah lengkap. Akibatnya: angka di sidebar "Lihat
@@ -7567,6 +7705,10 @@ async function loadAll(){
             renderUtama();
           }
         }catch(e){}
+        }
+        // Tandai gadget ini sudah selesai seed penuh -- mulai sekarang
+        // kunjungan berikutnya cukup delta ('since'), bukan unduh ulang semua.
+        saveSeedCache_('entries', { data: ENTRIES, lastSync: new Date().toISOString(), fullySeeded: true });
       }
     }catch(e){}
     try{ await syncPmReportsFromBackend(); }catch(e){}
@@ -17079,7 +17221,7 @@ function openMaintenanceDNA(kode){
         <div class="dna-val">${starsHtmlN(dna.karakterStars)} <span style="font-size:11px;color:var(--text-dim);font-family:var(--font-mono);">${dna.karakterScore}% — ${escapeHtml(dna.karakterLabel)}</span></div>
       </div>
 
-      <div class="dna-section-title">Penyakit Bawaan <span class="dna-note">(masalah yang berulang ≥2× di histori)</span></div>
+      <div class="dna-section-title">Masalah Berulang <span class="dna-note">(masalah yang berulang ≥2× di histori)</span></div>
       ${dna.penyakitBawaan.length ? `<ul class="dna-list">${dna.penyakitBawaan.map(p=>`<li>✔ ${escapeHtml(p.label)} <span class="dna-count">(${p.count}×)</span> ${dnaSrcBadgeHtml([p.source])}</li>`).join('')}</ul>`
         : `<div class="dna-empty">Belum terdeteksi masalah berulang dari histori yang tercatat.</div>`}
 
