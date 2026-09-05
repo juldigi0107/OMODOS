@@ -2,7 +2,42 @@
 <html lang="id">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+<!-- ============ PWA / FULLSCREEN TANPA ADDRESS BAR ============
+     Address bar browser TIDAK BISA disembunyikan lewat JS semata (batasan
+     keamanan browser modern). Cara yang benar-benar berhasil: install
+     aplikasi ini sebagai PWA lewat "Add to Home Screen" di tablet, lalu buka
+     dari ikon di homescreen (bukan dari browser) -- saat itu tampilan jadi
+     "standalone/fullscreen": tanpa address bar & tanpa UI browser sama
+     sekali. Meta tag & manifest di bawah ini yang membuat mode "Add to Home
+     Screen" tersebut terbuka fullscreen, bukan cuma jadi shortcut biasa. -->
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="OMODOS">
+<meta name="theme-color" content="#111318">
+<link rel="manifest" id="pwa-manifest-link" href="">
+<script>
+  // Manifest dibuat dinamis (bukan file statis) supaya start_url-nya selalu
+  // mengikuti URL deployment /exec yang sedang dipakai (Apps Script tidak
+  // bisa menyajikan file manifest.json terpisah di path tetap).
+  (function(){
+    var startUrl = window.location.href.split('?')[0].split('#')[0];
+    var manifest = {
+      name: 'OMODOS - Maintenance Operating System',
+      short_name: 'OMODOS',
+      start_url: startUrl,
+      scope: startUrl,
+      display: 'fullscreen',
+      orientation: 'any',
+      background_color: '#111318',
+      theme_color: '#111318',
+      icons: []
+    };
+    var blob = new Blob([JSON.stringify(manifest)], { type: 'application/manifest+json' });
+    document.getElementById('pwa-manifest-link').setAttribute('href', URL.createObjectURL(blob));
+  })();
+</script>
 <title>OMODOS - Smart Maintenance Reporting Platform | Packaging Offset || Created by IDJ</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='50' r='38' fill='none' stroke='%23111111' stroke-width='16'/%3E%3Cpath d='M50 88 A38 38 0 0 1 21.7 74.8' fill='none' stroke='%2300AEEF' stroke-width='16'/%3E%3Cpath d='M21.7 74.8 A38 38 0 0 1 50 88' fill='none' stroke='%23EC008C' stroke-width='16'/%3E%3Cpath d='M50 88 A38 38 0 0 0 78.3 74.8' fill='none' stroke='%23FFC20E' stroke-width='16'/%3E%3C/svg%3E">
 <script>(function(){ try{ var t = localStorage.getItem('app_theme') || 'omodos'; document.documentElement.setAttribute('data-theme', t); }catch(e){} try{ var s = localStorage.getItem('app_style') || 'klasik'; if(s !== 'klasik'){ document.documentElement.setAttribute('data-style', s); } }catch(e){} })();
@@ -5946,11 +5981,24 @@ function applyRbacToUi(){
   $$('.nav-group-collapsible').forEach(group=>{
     const parentBtn = $('.nav-parent-btn', group);
     const groupKey = (parentBtn && parentBtn.dataset.group) || group.dataset.groupKey || '';
-    const permKey = 'group.' + groupKey;
-    const permKnown = !!groupKey && FEATURE_REGISTRY.some(f => f.PermissionKey === permKey);
-    const explicitlyDenied = permKnown && !hasPermission(permKey);
+    // [FIX] Baris 'group.<key>' otomatis terdaftar di Role Access Management
+    // sebagai baris TERPISAH ("... (Grup)") dari menu-menu di dalamnya. Karena
+    // Simpan Role Access selalu mengirim SEMUA baris yang sedang tampil di
+    // tabel (bukan hanya yang diubah), baris grup yang tidak sengaja
+    // dibiarkan tidak tercentang otomatis tersimpan sebagai "ditolak" (false)
+    // begitu Superadmin menyimpan perubahan apa pun -- walau menu di dalam
+    // grup itu (mis. Patrol Harian) sudah eksplisit diizinkan satu-satu.
+    // Akibatnya seluruh grup (Reports & Field Work, Water Treatment Plant,
+    // Energy & Utility, KPI Department, dst) raib untuk role tsb walau
+    // isinya sudah diizinkan -- ini penyebab utama "menu sidebar/bottom bar
+    // tidak sesuai konfigurasi akun". Supaya konsisten dengan menu individual
+    // (default: izinkan, kecuali memang tidak ada satu pun menu di dalamnya
+    // yang diizinkan), grup sekarang HANYA disembunyikan berdasarkan
+    // visibilitas submenu di dalamnya -- permission 'group.<key>' tidak lagi
+    // dipakai sebagai gate tambahan yang bisa mengunci seluruh grup secara
+    // tidak sengaja.
     const visibleChild = $$('.nav-btn[data-view]', group).some(b => b.style.display !== 'none');
-    const visible = !explicitlyDenied && visibleChild;
+    const visible = visibleChild;
     group.style.display = visible ? '' : 'none';
     if(groupKey){
       $$('.bottom-nav-btn[data-group="'+groupKey+'"]').forEach(bn=>{ bn.style.display = visible ? '' : 'none'; });
@@ -20089,16 +20137,35 @@ document.addEventListener('dragstart', (ev)=>{
   else { restoreFormEntryDraft(); }
 })();
 
+// Deteksi apakah app sedang dibuka sebagai PWA ter-install (dari "Add to
+// Home Screen") -- kalau iya, address bar SUDAH hilang otomatis lewat
+// manifest (display:'fullscreen'), jadi tidak perlu lagi memanggil
+// Fullscreen API (yang di sebagian tablet malah menampilkan indikator/UI
+// tambahan kalau dipanggil di mode yang sudah fullscreen).
+function isRunningAsInstalledPwa() {
+  return window.matchMedia('(display-mode: standalone)').matches ||
+    window.matchMedia('(display-mode: fullscreen)').matches ||
+    window.navigator.standalone === true; // iOS Safari lama
+}
+
 function aktifkanFullscreen() {
+  if (isRunningAsInstalledPwa()) return;
   const element = document.documentElement; // Mengambil seluruh halaman HTML
 
   if (element.requestFullscreen) {
-    element.requestFullscreen();
+    element.requestFullscreen().catch(()=>{});
   } else if (element.webkitRequestFullscreen) { /* Safari / iOS */
     element.webkitRequestFullscreen();
   } else if (element.msRequestFullscreen) { /* IE11 */
     element.msRequestFullscreen();
   }
+  // Kunci ke orientasi landscape kalau tablet dipasang mendatar -- opsional,
+  // browser yang tidak mendukung Screen Orientation API akan diam saja.
+  try{
+    if (screen.orientation && screen.orientation.lock) {
+      screen.orientation.lock('landscape').catch(()=>{});
+    }
+  }catch(e){}
 }
 
 // Opsi A: Memicu fullscreen ketika tombol login ditekan (Direkomendasikan)
@@ -20114,6 +20181,13 @@ if (loginForm) {
 document.addEventListener('click', () => {
   aktifkanFullscreen();
 }, { once: true }); // 'once: true' memastikan ini hanya berjalan satu kali saat klik pertama
+
+// Opsi C: coba lagi otomatis setiap kali user kembali ke tab ini (mis. tablet
+// sempat dikunci lalu dibuka lagi) -- browser kadang keluar dari fullscreen
+// API saat layar dikunci.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') aktifkanFullscreen();
+});
 
 /* =========================================================
    AI MAINTENANCE COPILOT
