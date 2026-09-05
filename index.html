@@ -4696,7 +4696,7 @@ pre, code{ white-space:pre-wrap; word-break:break-word; overflow-wrap:anywhere; 
             <button class="btn btn-sm btn-primary" id="btn-kb-autosync"><i class="ph-bold ph-robot"></i> Auto-Sync ke KB (AI Groq)</button>
           </div>
         </div>
-        <div class="sub" style="margin-bottom:10px;">Dipindai otomatis 100% lokal (tanpa API/LLM eksternal) dari seluruh konten menu/fitur yang sudah ada di aplikasi ini — Logbook (masalah berulang), Report RCA, &amp; temuan Predictive Maintenance (Warning/Critical) untuk kategori <b>Frequently Problem</b>/<b>Lessons Learned</b>, Kaizen/Project Improvement &amp; Report Hub (Work Instruction) untuk <b>Best Practice</b>, serta Meeting Action Item yang sudah selesai (Closed) untuk <b>Lessons Learned</b> — lalu dicocokkan otomatis ke kategori Knowledge Base yang sesuai. Data yang sudah pernah ditambahkan tidak akan muncul lagi. Klik "Tambahkan" untuk meninjau satu-satu, atau <b>"Auto-Sync ke KB"</b> untuk memproses SEMUA saran sekaligus di belakang layar: tiap item otomatis dirapikan AI (Groq), dicek dulu supaya tidak duplikat/mirip dengan entri lain, lalu langsung dikirim ke Sheets.</div>
+        <div class="sub" style="margin-bottom:10px;">Dipindai otomatis 100% lokal (tanpa API/LLM eksternal) dari seluruh konten menu/fitur yang sudah ada di aplikasi ini — Logbook (isu berulang), Report RCA, &amp; temuan Predictive Maintenance (Warning/Critical) untuk kategori <b>Frequently Problem</b>/<b>Lessons Learned</b>, Kaizen/Project Improvement &amp; Report Hub (Work Instruction) untuk <b>Best Practice</b>, serta Meeting Action Item yang sudah selesai (Closed) untuk <b>Lessons Learned</b> — lalu dicocokkan otomatis ke kategori Knowledge Base yang sesuai. Data yang sudah pernah ditambahkan tidak akan muncul lagi. Klik "Tambahkan" untuk meninjau satu-satu, atau <b>"Auto-Sync ke KB"</b> untuk memproses SEMUA saran sekaligus di belakang layar: tiap item otomatis dirapikan AI (Groq), dicek dulu supaya tidak duplikat/mirip dengan entri lain, lalu langsung dikirim ke Sheets.</div>
         <div id="kb-suggest-list"></div>
       </div>
       <div id="kb-list" class="kb-grid"></div>
@@ -9483,7 +9483,7 @@ function kbMachineOptions(selectedKode){
 /* ---------------- SUMBER DATA OTOMATIS UNTUK KNOWLEDGE BASE ----------------
    Setiap jenis entri KB (Frequently Problem, Best Practice, Lessons Learned)
    bisa diisi manual ATAU ditarik otomatis dari menu/fitur lain yang sudah ada
-   datanya: Logbook (masalah berulang), Project Improvement/Kaizen (perbaikan
+   datanya: Logbook (isu berulang), Project Improvement/Kaizen (perbaikan
    yang sudah selesai), dan Report RCA (root cause & corrective action). */
 function kbNormalize(str){ return String(str||'').trim().toLowerCase().replace(/\s+/g,' '); }
 
@@ -9670,7 +9670,7 @@ function kbBuildSuggestions(){
   // urutan sumber didaftarkan (Logbook dulu, baru Kaizen, dst) --
   // masalah yang baru terjadi 2x bisa nongol duluan dibanding masalah yang
   // sudah 20x berulang hanya karena sumbernya sama. Sekarang diurutkan
-  // berdasarkan "skor kepentingan": masalah berulang (Logbook) diberi bobot
+  // berdasarkan "skor kepentingan": isu berulang (Logbook) diberi bobot
   // PALING TINGGI dan proporsional ke jumlah kejadian (semakin sering
   // terjadi = semakin mendesak didokumentasikan supaya tidak terus
   // ditangani dari nol tiap kali), sisanya diberi bobot dasar per jenis
@@ -17260,9 +17260,9 @@ function openMaintenanceDNA(kode){
         <div class="dna-val">${starsHtmlN(dna.karakterStars)} <span style="font-size:11px;color:var(--text-dim);font-family:var(--font-mono);">${dna.karakterScore}% — ${escapeHtml(dna.karakterLabel)}</span></div>
       </div>
 
-      <div class="dna-section-title">Masalah Berulang <span class="dna-note">(masalah yang berulang ≥2× di histori)</span></div>
+      <div class="dna-section-title">Critical Point <span class="dna-note">(isu yang berulang ≥2× di histori)</span></div>
       ${dna.penyakitBawaan.length ? `<ul class="dna-list">${dna.penyakitBawaan.map(p=>`<li>✔ ${escapeHtml(p.label)} <span class="dna-count">(${p.count}×)</span> ${dnaSrcBadgeHtml([p.source])}</li>`).join('')}</ul>`
-        : `<div class="dna-empty">Belum terdeteksi masalah berulang dari histori yang tercatat.</div>`}
+        : `<div class="dna-empty">Belum terdeteksi isu berulang dari histori yang tercatat.</div>`}
 
       <div class="dna-section-title">Komponen Lemah <span class="dna-note">(paling sering disebut di Deskripsi Masalah/Tindakan Perbaikan)</span></div>
       ${dna.komponenLemah.length ? `<ul class="dna-list">${dna.komponenLemah.map(k=>`<li>${escapeHtml(k.nama)} <span class="dna-count">(disebut ${k.count}×)</span> ${dnaSrcBadgeHtml(k.sources)}</li>`).join('')}</ul>`
@@ -20424,7 +20424,7 @@ function copilotBreakdownGaps(kodeOrNama){
   const avg = recentGaps.reduce((s,g)=>s+g,0) / recentGaps.length;
   return { avgGapDays: avg, lastDate: dates[dates.length-1], gaps };
 }
-// Kelompokkan masalah berulang (berdasarkan teks Deskripsi Masalah) & solusi paling sering dipakai
+// Kelompokkan isu berulang (berdasarkan teks Deskripsi Masalah) & solusi paling sering dipakai
 function copilotRepeatedProblems(kodeOrNama, minCount){
   const rel = copilotEntriesFor(kodeOrNama).filter(e=> String(e['Deskripsi Masalah']||'').trim().length > 4);
   const groups = {};
@@ -20541,7 +20541,7 @@ function copilotInsightsForScope(kodeOrNama){
     }
   });
 
-  // 4) Masalah berulang + solusi paling efektif
+  // 4) Isu berulang + solusi paling efektif
   const repeated = copilotRepeatedProblems(kodeOrNama, isAll ? 4 : 3).slice(0, isAll ? 3 : 5);
   repeated.forEach(r=>{
     const srcs = r.entries.slice(0,6).map(copilotSourceFromEntry);
