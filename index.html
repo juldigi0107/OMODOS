@@ -3002,7 +3002,8 @@ pre, code{ white-space:pre-wrap; word-break:break-word; overflow-wrap:anywhere; 
     <h1 class="omodos-wordmark">OMODOS</h1>
     <div class="omodos-tagline">OUR <b class="c-blue">MOTTO</b>. OUR <b class="c-pink">DUTY</b>. OUR <b class="c-amber">STRATEGY</b>.</div>
     <div class="omodos-divider"><span></span><i></i><span></span></div>
-    <div class="sub-title">Smart Maintenance Reporting Platform - Packaging Offset BMJ</div>
+    <div class="sub-title">Smart Maintenance Reporting Platform</div>
+	<div class="sub-title">Packaging Offset BMJ</div>
     <form id="form-login" autocomplete="off">
       <div class="field">
         <label>Username</label>
@@ -3017,7 +3018,8 @@ pre, code{ white-space:pre-wrap; word-break:break-word; overflow-wrap:anywhere; 
       </button>
       <div class="login-err" id="login-err"></div>
     </form>
-    <div class="login-foot">PT BUKIT MURIA JAYA // © 2026 IDJ. All Rights Reserved.</div>
+    <div class="login-foot">PT BUKIT MURIA JAYA</div>
+<div class="login-foot">© 2026 IDJ. All Rights Reserved.</div>
   </div>
 </div>
 
@@ -6096,6 +6098,9 @@ function showSettingLoginModal(onSuccess){
       closeModal();
       if(onSuccess) onSuccess();
     }catch(err){
+      document.getElementById('app-splash')?.classList.remove('visible','show');
+      appRoot.classList.remove('unlocked');
+      gate.style.display = '';
       errEl.textContent = err.message || 'Gagal menghubungi server. Periksa koneksi internet Anda.';
       errEl.style.display = 'block';
     }finally{
@@ -6926,7 +6931,34 @@ function handleApiAuthFailure_(message, requestToken){
   }
   logoutUser();
 }
+// Session-only read cache; isolated by backend, token and parameters.
+const READY_READS = new Map();
+const ACTIVE_READS = new Map();
+let READ_GENERATION = 0;
+function invalidatePreparedReads_(){
+  READY_READS.clear(); READ_GENERATION++;
+  if(typeof PMC_STATE !== 'undefined') PMC_STATE.loaded = false;
+  if(typeof MTG_STATE !== 'undefined') MTG_STATE.loaded = false;
+}
 async function apiGet(action, params={}, retries=2){
+  const token = (SETTING_AUTH_OK && SETTING_SESSION_TOKEN) ? SETTING_SESSION_TOKEN : SESSION_TOKEN;
+  const key = JSON.stringify([WEB_APP_URL, token, action, Object.keys(params).sort().map(k=>[k,params[k]])]);
+  const fresh = params.fresh || params._ts;
+  const cached = READY_READS.get(key);
+  if(!fresh && cached && Date.now()-cached.time < 60000) return structuredReadCopy_(cached.data);
+  const activeKey = key + ':' + READ_GENERATION;
+  if(ACTIVE_READS.has(activeKey)) return structuredReadCopy_(await ACTIVE_READS.get(activeKey));
+  const generation = READ_GENERATION;
+  const promise = apiGetNetwork_(action, params, retries).then(data=>{
+    if(generation === READ_GENERATION) READY_READS.set(key,{data:structuredReadCopy_(data),time:Date.now()});
+    return data;
+  });
+  ACTIVE_READS.set(activeKey,promise);
+  try{ return structuredReadCopy_(await promise); }finally{ ACTIVE_READS.delete(activeKey); }
+}
+function structuredReadCopy_(data){ return data === undefined ? data : JSON.parse(JSON.stringify(data)); }
+
+async function apiGetNetwork_(action, params={}, retries=2){
   // PATCHED v2.1 - 45s + retry 2x dengan backoff, prioritas bootstrap
   if(!WEB_APP_URL){ throw new Error('NO_URL'); }
   if(!SESSION_TOKEN){ throw new Error('AUTH_REQUIRED'); }
@@ -6944,7 +6976,7 @@ async function apiGet(action, params={}, retries=2){
       return json.data;
     }catch(e){
       lastErr=e;
-      if(/AUTH_REQUIRED|SESSION_INVALID|SESSION_EXPIRED|ACCOUNT_INACTIVE/.test(e.message||'')) throw e;
+      if(/FORBIDDEN|PERMISSION|UNKNOWN_ACTION|AUTH_REQUIRED|SESSION_INVALID|SESSION_EXPIRED|ACCOUNT_INACTIVE/.test(e.message||'')) throw e;
       if(attempt<retries){
         await new Promise(r=>setTimeout(r, 1200*(attempt+1)));
       }
@@ -6979,6 +7011,7 @@ async function apiPost(payload){
       handleApiAuthFailure_(json.error || '', requestToken);
       throw new Error(json.error || 'Gagal menyimpan data');
     }
+    invalidatePreparedReads_();
     setAppOnlineStatus(true);
     return json;
   }catch(err){
@@ -7015,7 +7048,7 @@ async function apiPost(payload){
   // fetch features/permissions berhasil lebih dulu.
   applyRbacToUi();
   if(gate) gate.style.display = 'none';
-  if(appRoot) appRoot.classList.add('unlocked');
+  document.getElementById('app-splash')?.classList.add('show','visible');
   // [FIX] switchToView('dashboard') dipanggil lewat setTimeout(...,0), BUKAN
   // langsung sinkron di sini. Alasan: IIFE ini jalan di TENGAH proses parsing
   // script (jauh sebelum baris const LS_MBD_KEY/LS_CR_KEY/LS_ENG_KEY di bawah
@@ -7526,215 +7559,54 @@ document.addEventListener('click', (ev)=>{
 });
 
 /* ---------------- DATA LOADING ---------------- */
+let PREPARATION_PROMISE = null;
 async function loadAll(){
-  // PATCHED v2.1 - BOOTSTRAP 1-call untuk Home, background lazy untuk sisanya
-  if(!WEB_APP_URL){ renderConfigBanner(); return; }
-  let homeRendered = false;
-
-  // [PERF FIX] Hydrate instan dari localStorage KALAU gadget ini sudah
-  // pernah seed sebelumnya -- Home/Logbook langsung tampil dari data lama
-  // tanpa menunggu satu pun request jaringan, baru disegarkan di
-  // background. Kalau ini kunjungan pertama di gadget tsb (belum ada
-  // cache), lewati -- alur bootstrap lama di bawah tetap yang mengisi
-  // pertama kali (proses "seed").
-  const seedEntries = loadSeedCache_('entries');
-  const seedMachines = loadSeedCache_('machines');
-  const seedPersonil = loadSeedCache_('personil');
-  const seedPatrol = loadSeedCache_('patrolTemplate');
-  if(seedEntries && seedMachines){
-    ENTRIES = seedEntries.data || [];
-    MACHINES = seedMachines.data || [];
-    if(seedPersonil) PERSONIL = seedPersonil.data || [];
-    if(seedPatrol) PATROL_TEMPLATE = seedPatrol.data || [];
-    populateMachineSelects();
-    engPopulateAreaSelect();
-    populateAiFilters();
-    updateSidebarCounts();
-    populatePelaporSelect();
-    renderConfigBanner();
-    if(typeof renderDashboardView==='function'){ try{ renderDashboardView(); homeRendered=true; }catch(e){} }
-    if(typeof renderHomeSmartResume==='function'){ try{ renderHomeSmartResume(); }catch(e){} }
+  if(PREPARATION_PROMISE) return PREPARATION_PROMISE;
+  PREPARATION_PROMISE = prepareAllData_();
+  try{ return await PREPARATION_PROMISE; }finally{ PREPARATION_PROMISE = null; }
+}
+async function prepareAllData_(){
+  // Yield until all script declarations (including project/meeting state) exist.
+  await new Promise(resolve=>setTimeout(resolve,0));
+  const token = SESSION_TOKEN;
+  if(!WEB_APP_URL || !token) throw new Error('AUTH_REQUIRED');
+  const manifest = await apiGet('prepareManifest', {fresh:'1'}, 1);
+  if(!manifest || !Array.isArray(manifest.actions)) throw new Error('Deploy ulang codeGSClaude.gs terbaru.');
+  const pending = manifest.actions.slice();
+  const data = {}; const errors = []; let done = 0;
+  const progress = ()=>{
+    const el = document.getElementById('app-splash-text');
+    if(el) el.textContent = 'Menyiapkan data… '+done+' / '+manifest.actions.length;
+  };
+  progress();
+  await Promise.all(Array.from({length:Math.min(4,pending.length)},async()=>{
+    while(pending.length){
+      const action = pending.shift();
+      try{ data[action] = await apiGet(action, {}, 1); }
+      catch(e){ errors.push(action+': '+e.message); }
+      done++; progress();
+    }
+  }));
+  if(token !== SESSION_TOKEN) throw new Error('SESSION_INVALID');
+  if(errors.length) throw new Error('Persiapan belum lengkap. Coba masuk kembali. '+errors.join('; '));
+  for(const action of ['list','machines','personil','patrolChecklistTemplate']){
+    if(action in data && !Array.isArray(data[action])) throw new Error('Format data '+action+' tidak valid.');
   }
-
-  // [PERF FIX] Kalau gadget ini SUDAH pernah seed (di atas), lewati seluruh
-  // proses bootstrap/full-fetch yang berat ini -- Home sudah tampil dari
-  // cache. Penyegaran data selanjutnya ditangani oleh delta-sync di blok
-  // "background lazy load" di bawah (hanya minta yang berubah). Blok ini
-  // HANYA jalan penuh untuk kunjungan PERTAMA di gadget tsb (proses seed).
-  if(!(seedEntries && seedMachines)) try{
-    // Coba endpoint baru bootstrap (1 request = machines + personil + recentEntries)
-    let boot = null;
-    try{
-      boot = await apiGet('bootstrap');
-    }catch(e){
-      console.warn('[OMODOS] bootstrap gagal, fallback ke list+machines:', e.message);
-    }
-    if(boot && (boot.machines || boot.recentEntries || boot.analitikConfig)){
-      const recent = boot.recentEntries || boot.entries || [];
-      ENTRIES = recent.sort((a,b)=> new Date(b['Timestamp Input']) - new Date(a['Timestamp Input']));
-      MACHINES = boot.machines || [];
-      if(boot.personil) PERSONIL = boot.personil;
-      if(boot.patrolTemplate) PATROL_TEMPLATE = boot.patrolTemplate;
-      // PATCHED FINAL: semua setting master koneksi langsung dari Google Sheets via bootstrap
-      if(boot.analitikConfig && Object.keys(boot.analitikConfig).length){
-        try{ saveAnalitikConfigLocal(boot.analitikConfig); }catch(e){}
-        ANALITIK_CONFIG = boot.analitikConfig;
-        if(typeof renderAnalitikConfigForm==='function'){ try{ renderAnalitikConfigForm(); }catch(e){} }
-      }
-      if(boot.patrolCategoryConfig && Object.keys(boot.patrolCategoryConfig).length){
-        try{ savePatrolCategoryConfigLocal(boot.patrolCategoryConfig); }catch(e){}
-        PATROL_CATEGORY_CONFIG = boot.patrolCategoryConfig;
-      }
-      if(boot.patrolGeneralChecklist && Object.keys(boot.patrolGeneralChecklist).length){
-        try{ savePatrolGeneralChecklistLocal(boot.patrolGeneralChecklist); }catch(e){}
-        PATROL_GENERAL_CHECKLIST = boot.patrolGeneralChecklist;
-      }
-      if(boot.sparepartLokasi && Array.isArray(boot.sparepartLokasi)){
-        try{ saveSparepartLokasiLocal(boot.sparepartLokasi); }catch(e){}
-        SPAREPART_LOKASI = boot.sparepartLokasi;
-      }
-      populateMachineSelects();
-      engPopulateAreaSelect();
-      populateAiFilters();
-      updateSidebarCounts();
-      populatePelaporSelect();
-      renderConfigBanner();
-      // RENDER HOME LANGSUNG
-      if(typeof renderDashboardView==='function'){
-        try{ renderDashboardView(); homeRendered=true; }catch(e){ console.warn(e); }
-      }
-      if(typeof renderHomeSmartResume==='function'){
-        try{ renderHomeSmartResume(); }catch(e){}
-      }
-      // [PERF FIX] Simpan hasil kunjungan pertama ini sebagai seed lokal.
-      // Catatan: bootstrap hanya mengirim recentEntries (>= SOT cutoff),
-      // jadi seed 'entries' di sini masih ringkas -- lengkap akan disimpan
-      // ulang oleh proses lazy-load histori penuh di blok background di
-      // bawah begitu selesai, supaya seed benar-benar berisi semua histori.
-      const seedTime = new Date().toISOString();
-      saveSeedCache_('entries', { data: ENTRIES, lastSync: seedTime });
-      saveSeedCache_('machines', { data: MACHINES, lastSync: seedTime });
-      if(PERSONIL && PERSONIL.length) saveSeedCache_('personil', { data: PERSONIL, lastSync: seedTime });
-      if(PATROL_TEMPLATE && PATROL_TEMPLATE.length) saveSeedCache_('patrolTemplate', { data: PATROL_TEMPLATE, lastSync: seedTime });
-    }else{
-      // Fallback lama: parallel list + machines
-      const [entries, machines] = await Promise.all([apiGet('list'), apiGet('machines')]);
-      ENTRIES = entries.sort((a,b)=> new Date(b['Timestamp Input']) - new Date(a['Timestamp Input']));
-      MACHINES = machines;
-      populateMachineSelects();
-      engPopulateAreaSelect();
-      populateAiFilters();
-      updateSidebarCounts();
-      renderConfigBanner();
-      if(typeof renderDashboardView==='function'){
-        try{ renderDashboardView(); homeRendered=true; }catch(e){}
-      }
-      const seedTimeFb = new Date().toISOString();
-      saveSeedCache_('entries', { data: ENTRIES, lastSync: seedTimeFb });
-      saveSeedCache_('machines', { data: MACHINES, lastSync: seedTimeFb });
-    }
-  }catch(err){
-    toast('Gagal memuat data: ' + err.message, true);
+  // Keep prefetched responses fresh throughout hydration, even on slow connections.
+  READY_READS.forEach(value=>{value.time=Date.now();});
+  ENTRIES = (data.list || []).slice().sort((a,b)=>new Date(b['Timestamp Input'])-new Date(a['Timestamp Input']));
+  MACHINES = data.machines || []; PERSONIL = data.personil || [];
+  PATROL_TEMPLATE = data.patrolChecklistTemplate || [];
+  const tasks = [['predictiveReports',syncPmReportsFromBackend],['generalReports',syncGrReportsFromBackend],['ipalReports',syncIpalReportsFromBackend],['rcaReports',syncRcaReportsFromBackend],['kbEntries',loadKbEntries],['sparepartLokasi',syncSparepartLokasiFromBackend],['sparepartStatus',syncSparepartStatusFromBackend],['sparepartEta',syncSparepartEtaFromBackend],['sparepartWarehouse',syncSparepartWarehouseFromBackend],['sparepartOpname',syncSparepartOpnameFromBackend],['kpiKerjaList',syncKpiKerjaFromBackend],['machineBreakdownList',loadMachineBreakdownList],['recordYtdList',loadRecordYtdList],['runHourComparisonList',loadRunHourComparisonList],['energyCostToeList',loadEnergyCostToeList],['correctiveReportList',loadCorrectiveReportList],['energyUtilityList',loadEnergyUtilityList],['analitikConfig',syncAnalitikConfigFromBackend],['patrolCategoryConfig',syncPatrolCategoryConfigFromBackend],['patrolGeneralChecklist',syncPatrolGeneralChecklistFromBackend],['piHardSkillStandard',piSyncHardSkillFromBackend],['piPersonnelMaster',syncPiPersonnelMasterFromBackend]];
+  for(const [action,fn] of tasks){
+    if(Object.prototype.hasOwnProperty.call(data,action)) await fn();
   }
-
-  // Background lazy load - tidak blok Home
-  setTimeout(async ()=>{
-    // [PERF FIX] Master data (Machines/Personil/Patrol Template) biasanya
-    // kecil & jarang berubah, tapi kalau gadget sudah dihydrate dari cache
-    // (jadi array-nya SUDAH terisi), kondisi lama "if kosong baru fetch" di
-    // bawah ini tidak pernah jalan lagi -- data jadi stale selamanya sampai
-    // cache dihapus manual. Karena itu ketiganya tetap disegarkan penuh
-    // sekali per sesi di background (tidak memblokir Home), lalu ditulis
-    // ulang ke cache -- ukurannya kecil jadi murah, tidak seperti Logbook.
-    try{ MACHINES = await apiGet('machines'); populateMachineSelects(); saveSeedCache_('machines', { data: MACHINES, lastSync: new Date().toISOString() }); }catch(e){}
-    try{
-      PERSONIL = await apiGet('personil');
-      saveSeedCache_('personil', { data: PERSONIL, lastSync: new Date().toISOString() });
-      populatePelaporSelect();
-    }catch(e){ PERSONIL = PERSONIL||[]; }
-    try{
-      PATROL_TEMPLATE = await apiGet('patrolChecklistTemplate');
-      saveSeedCache_('patrolTemplate', { data: PATROL_TEMPLATE, lastSync: new Date().toISOString() });
-    }catch(e){ PATROL_TEMPLATE = PATROL_TEMPLATE||[]; }
-    // [PERF FIX - DELTA SYNC] Sebelumnya baris ini SELALU mengunduh ULANG
-    // seluruh histori Logbook (termasuk data historis OneNote) di setiap
-    // kunjungan, walau tidak ada satu baris pun yang berubah -- inilah
-    // sumber utama loading yang lambat & berat di tablet. Sekarang: kalau
-    // gadget ini sudah pernah seed penuh sebelumnya, cukup minta baris yang
-    // berubah SEJAK kunjungan terakhir (parameter 'since' -> getLogbookList_
-    // di code.gs), gabungkan ke cache lama, lalu simpan lagi. Kalau ini
-    // gadget baru (belum pernah seed histori penuh), tetap ambil semuanya
-    // SATU KALI dan itulah yang jadi seed untuk seterusnya.
-    try{
-      const entrySeed = loadSeedCache_('entries');
-      const hasFullSeed = !!(entrySeed && entrySeed.fullySeeded);
-      if(hasFullSeed){
-        const since = entrySeed.lastSync;
-        const delta = await apiGet('list', { since: since });
-        if(delta && (Array.isArray(delta.changed) || Array.isArray(delta.deletedIds))){
-          if((delta.changed && delta.changed.length) || (delta.deletedIds && delta.deletedIds.length)){
-            ENTRIES = mergeByIdInto_(ENTRIES, delta.changed, delta.deletedIds, 'ID')
-              .sort((a,b)=> new Date(b['Timestamp Input']) - new Date(a['Timestamp Input']));
-            try{ updateSidebarCounts(); }catch(e){}
-            try{
-              if(document.getElementById('view-utama') && document.getElementById('view-utama').classList.contains('active') && typeof renderUtama==='function'){
-                renderUtama();
-              }
-            }catch(e){}
-          }
-          saveSeedCache_('entries', { data: ENTRIES, lastSync: delta.serverTime || new Date().toISOString(), fullySeeded: true });
-        }
-      }else{
-        const fullEntries = await apiGet('list');
-        if(Array.isArray(fullEntries) && fullEntries.length){
-          ENTRIES = fullEntries.sort((a,b)=> new Date(b['Timestamp Input']) - new Date(a['Timestamp Input']));
-        // [FIX] Sebelumnya ENTRIES di-update di sini tapi TIDAK ADA yang
-        // memberitahu UI ("cnt-utama" di sidebar & halaman Lihat Logbook)
-        // kalau data sudah lengkap. Akibatnya: angka di sidebar "Lihat
-        // Logbook" nyangkut di hitungan awal (recentEntries/SOT saja, bisa
-        // 0 kalau belum ada entri >= SOT_CUTOFF_DATE), dan kalau halaman
-        // Logbook (view "utama") sedang dibuka, isinya tidak ikut nambah
-        // sampai user pindah halaman lalu balik lagi / klik Refresh manual.
-        // Sekarang begitu data lengkap datang, langsung: (1) update angka
-        // sidebar, dan (2) render ulang halaman Logbook kalau sedang aktif
-        // — tanpa perlu menunggu seluruh proses sinkronisasi lain di bawah
-        // ini selesai dulu.
-        try{ updateSidebarCounts(); }catch(e){}
-        try{
-          if(document.getElementById('view-utama') && document.getElementById('view-utama').classList.contains('active') && typeof renderUtama==='function'){
-            renderUtama();
-          }
-        }catch(e){}
-        }
-        // Tandai gadget ini sudah selesai seed penuh -- mulai sekarang
-        // kunjungan berikutnya cukup delta ('since'), bukan unduh ulang semua.
-        saveSeedCache_('entries', { data: ENTRIES, lastSync: new Date().toISOString(), fullySeeded: true });
-      }
-    }catch(e){}
-    try{ await syncPmReportsFromBackend(); }catch(e){}
-    try{ await syncSparepartLokasiFromBackend(); }catch(e){}
-    try{ await syncSparepartStatusFromBackend(); }catch(e){}
-    try{ await syncSparepartEtaFromBackend(); }catch(e){}
-    try{ await syncSparepartWarehouseFromBackend(); }catch(e){}
-    try{ await syncSparepartOpnameFromBackend(); }catch(e){}
-    try{ await syncKpiKerjaFromBackend(); }catch(e){}
-    try{ await syncAnalitikConfigFromBackend(); }catch(e){}
-    try{ await syncPatrolCategoryConfigFromBackend(); }catch(e){}
-    try{ await syncPatrolGeneralChecklistFromBackend(); }catch(e){}
-    try{ await piSyncHardSkillFromBackend(); }catch(e){}
-    try{ await syncPiPersonnelMasterFromBackend(); }catch(e){}
-    // Refresh Home sekali lagi setelah background selesai, biar chip KPI/PO ikut update
-    if(typeof renderDashboardView==='function' && document.getElementById('view-dashboard') && document.getElementById('view-dashboard').classList.contains('active')){
-      try{ renderDashboardView(); }catch(e){}
-    }
-    // [FIX] Sama seperti Dashboard: kalau user sedang di halaman Logbook,
-    // pastikan tampilannya ikut disegarkan sekali lagi setelah seluruh
-    // proses background selesai, dan angka sidebar selalu final/akurat.
-    try{ updateSidebarCounts(); }catch(e){}
-    if(typeof renderUtama==='function' && document.getElementById('view-utama') && document.getElementById('view-utama').classList.contains('active')){
-      try{ renderUtama(); }catch(e){}
-    }
-  }, 400);
+  if(data.pmcFactoryProjects && data.pmcKaizens && data.pmcSgas) await pmcLoadAll(true);
+  if(data.meetingList && data.meetingActionList) await mtgLoadAll(true);
+  populateMachineSelects(); engPopulateAreaSelect(); populateAiFilters();
+  populatePelaporSelect(); updateSidebarCounts(); renderConfigBanner();
+  if(typeof renderDashboardView==='function') renderDashboardView();
+  if(typeof renderHomeSmartResume==='function') renderHomeSmartResume();
 }
 
 /* ---------------- PELAPOR NAME SPLITTING ----------------
@@ -12115,7 +11987,7 @@ async function loadMachineBreakdownList(){
   if(!WEB_APP_URL) return MACHINE_BREAKDOWN;
   try{
     const remote = await apiGet('machineBreakdownList');
-    if(remote && remote.ok && Array.isArray(remote.data)){ saveMbdLocal(remote.data); }
+    if(Array.isArray(remote)){ saveMbdLocal(remote); } else if(remote && Array.isArray(remote.data)){ saveMbdLocal(remote.data); }
   }catch(e){ /* pakai cache lokal kalau offline */ }
   return MACHINE_BREAKDOWN;
 }
@@ -12562,7 +12434,7 @@ async function loadRecordYtdList(){
   if(!WEB_APP_URL) return RECORD_YTD;
   try{
     const remote = await apiGet('recordYtdList');
-    if(remote && remote.ok && Array.isArray(remote.data)){ saveRytLocal(remote.data); }
+    if(Array.isArray(remote)){ saveRytLocal(remote); } else if(remote && Array.isArray(remote.data)){ saveRytLocal(remote.data); }
   }catch(e){ /* pakai cache lokal kalau offline */ }
   return RECORD_YTD;
 }
@@ -12767,7 +12639,7 @@ async function loadRunHourComparisonList(){
   if(!WEB_APP_URL) return RUN_HOUR_COMPARISON;
   try{
     const remote = await apiGet('runHourComparisonList');
-    if(remote && remote.ok && Array.isArray(remote.data)){ saveRhcLocal(remote.data); }
+    if(Array.isArray(remote)){ saveRhcLocal(remote); } else if(remote && Array.isArray(remote.data)){ saveRhcLocal(remote.data); }
   }catch(e){ /* pakai cache lokal kalau offline */ }
   return RUN_HOUR_COMPARISON;
 }
@@ -12945,7 +12817,7 @@ async function loadEnergyCostToeList(){
   if(!WEB_APP_URL) return ENERGY_COST_TOE;
   try{
     const remote = await apiGet('energyCostToeList');
-    if(remote && remote.ok && Array.isArray(remote.data)){ saveEctLocal(remote.data); }
+    if(Array.isArray(remote)){ saveEctLocal(remote); } else if(remote && Array.isArray(remote.data)){ saveEctLocal(remote.data); }
   }catch(e){ /* pakai cache lokal kalau offline */ }
   return ENERGY_COST_TOE;
 }
@@ -13153,7 +13025,7 @@ async function loadCorrectiveReportList(){
   if(!WEB_APP_URL) return CORRECTIVE_REPORT;
   try{
     const remote = await apiGet('correctiveReportList');
-    if(remote && remote.ok && Array.isArray(remote.data)){ saveCrLocal(remote.data); }
+    if(Array.isArray(remote)){ saveCrLocal(remote); } else if(remote && Array.isArray(remote.data)){ saveCrLocal(remote.data); }
   }catch(e){ /* pakai cache lokal kalau offline */ }
   return CORRECTIVE_REPORT;
 }
@@ -13330,7 +13202,7 @@ async function loadEnergyUtilityList(){
   if(!WEB_APP_URL) return ENERGY_UTILITY;
   try{
     const remote = await apiGet('energyUtilityList');
-    if(remote && remote.ok && Array.isArray(remote.data)){ saveEngLocal(remote.data); }
+    if(Array.isArray(remote)){ saveEngLocal(remote); } else if(remote && Array.isArray(remote.data)){ saveEngLocal(remote.data); }
   }catch(e){ /* pakai cache lokal kalau offline */ }
   return ENERGY_UTILITY;
 }
@@ -19487,6 +19359,7 @@ async function exportProjectXlsx(id){
       if(!json.sessionToken){
         throw new Error('Backend Apps Script masih versi lama. Deploy ulang FinalOMODOSRilis.gs terbaru, lalu gunakan URL /exec deployment tersebut.');
       }
+      invalidatePreparedReads_();
       CURRENT_USER = json.user;
       SESSION_TOKEN = json.sessionToken || '';
       SESSION_EXPIRES_AT = json.expiresAt || '';
@@ -19550,7 +19423,7 @@ async function exportProjectXlsx(id){
         if(typeof renderDashboardView === 'function'){ renderDashboardView(); }
       }catch(e){
         console.warn('[OMODOS] loadAll after login error', e);
-        toast('Login berhasil, tapi sebagian data gagal dimuat: '+e.message, true);
+        throw e;
       }
       // Data (termasuk render Home) sudah siap -- baru sekarang buka aplikasi
       // & tutup splash, supaya Home langsung tampil lengkap tanpa kedipan.
@@ -20190,7 +20063,14 @@ document.addEventListener('dragstart', (ev)=>{
   loadGrReports();
   $('#cnt-report-hub') && ($('#cnt-report-hub').textContent = GENERAL_REPORTS.length);
   if(WEB_APP_URL && CURRENT_USER && SESSION_TOKEN){
-    INITIAL_LOAD_PROMISE = loadAll();
+    INITIAL_LOAD_PROMISE = loadAll().then(()=>{
+      document.getElementById('app-root').classList.add('unlocked');
+      document.getElementById('app-splash')?.classList.remove('show','visible');
+    }).catch(err=>{
+      document.getElementById('app-splash')?.classList.remove('show','visible');
+      document.getElementById('login-gate').style.display='';
+      document.getElementById('login-err').textContent=err.message;
+    });
     INITIAL_LOAD_PROMISE.then(()=> {
       restoreFormEntryDraft();
       // PATCHED: render Home langsung setelah restore, tidak perlu pindah menu
