@@ -15501,25 +15501,123 @@ function openDetail(id){
         <h2 style="font-family:var(--font-display);margin:8px 0 0 0;">${mesinKey ? wikiLinkHtml('mesin', mesinKey, e['Nama Mesin']||'-') : escapeHtml(e['Nama Mesin']||'-')}</h2>
       </div>
       <div style="display:flex;gap:8px;">
+        <button class="btn btn-sm" id="btn-edit-entry"><i class="ph-bold ph-pencil-simple"></i> Edit</button>
         <button class="btn btn-sm btn-danger" id="btn-delete-entry"><i class="ph-bold ph-trash"></i> Hapus</button>
         <button class="modal-close" id="btn-close-modal">✕</button>
       </div>
     </div>
-    ${rows.filter(r=>r[1]).map(r=>`<div class="detail-row"><div class="k">${r[0]}</div><div class="v">${customRowHtml.hasOwnProperty(r[0]) ? customRowHtml[r[0]] : escapeHtml(r[1])}</div></div>`).join('')}
-    ${renderAttachGrid(atts, 'Lampiran')}
-    <div style="margin-top:20px;display:flex;gap:10px;">
-      <select id="quick-status" style="width:auto;">
-        <option value="">Ubah status...</option>
-        <option>Proses</option><option>Selesai</option><option>Pending</option><option>Emergency</option>
-      </select>
-      <button class="btn btn-sm btn-primary" id="btn-quick-status">Terapkan</button>
+    <div id="entry-view-mode">
+      ${rows.filter(r=>r[1]).map(r=>`<div class="detail-row"><div class="k">${r[0]}</div><div class="v">${customRowHtml.hasOwnProperty(r[0]) ? customRowHtml[r[0]] : escapeHtml(r[1])}</div></div>`).join('')}
+      ${renderAttachGrid(atts, 'Lampiran')}
+      <div style="margin-top:20px;display:flex;gap:10px;">
+        <select id="quick-status" style="width:auto;">
+          <option value="">Ubah status...</option>
+          <option>Proses</option><option>Selesai</option><option>Pending</option><option>Emergency</option>
+        </select>
+        <button class="btn btn-sm btn-primary" id="btn-quick-status">Terapkan</button>
+      </div>
     </div>
   `;
   $('#modal-bg').classList.add('active');
   $('#btn-close-modal').addEventListener('click', closeModal);
   $('#btn-delete-entry').addEventListener('click', ()=> deleteEntry(id));
+  $('#btn-edit-entry').addEventListener('click', ()=> renderEntryEditForm(e));
   $('#btn-quick-status').addEventListener('click', ()=> quickUpdateStatus(id));
   bindAttachGridClicks($('#modal-content'));
+}
+// [FITUR EDIT LOGBOOK] Ganti tampilan detail (read-only) di dalam modal yang sama
+// menjadi form yang bisa diedit langsung, lalu kirim ke backend lewat action
+// 'updateEntry' (meng-update baris yang sudah ada di Sheet, bukan menambah baris baru).
+const ENTRY_EDIT_FIELDS = [
+  { key:'Tanggal', label:'Tanggal', type:'date', toInput:v=>v?String(v).slice(0,10):'' },
+  { key:'Waktu', label:'Waktu Lapor', type:'time' },
+  { key:'Shift', label:'Shift', type:'select', options:['Pagi','Siang','Malam'] },
+  { key:'Grouping Pekerjaan', label:'Grouping Pekerjaan', type:'text' },
+  { key:'Grouping Team', label:'Grouping Team', type:'text' },
+  { key:'Nama Pelapor', label:'Nama Pelapor', type:'text' },
+  { key:'Personil Tambahan', label:'Personil Tambahan (pisah koma)', type:'text' },
+  { key:'Nomor Notifikasi Pekerjaan', label:'Nomor Notifikasi Pekerjaan', type:'text' },
+  { key:'Kode Mesin', label:'Kode Mesin', type:'text' },
+  { key:'Nama Mesin', label:'Nama Mesin', type:'text' },
+  { key:'Nama Unit', label:'Nama Unit (Sub-Mesin)', type:'text' },
+  { key:'Jenis Pekerjaan', label:'Jenis Pekerjaan', type:'text' },
+  { key:'Prioritas', label:'Prioritas', type:'select', options:['Low','Medium','High','Urgent'] },
+  { key:'Status', label:'Status', type:'select', options:['Proses','Selesai','Pending','Emergency'] },
+  { key:'Deskripsi Masalah', label:'Deskripsi Masalah', type:'textarea' },
+  { key:'Tindakan Perbaikan', label:'Tindakan Perbaikan', type:'textarea' },
+  { key:'Nama Material', label:'Nama Material', type:'text' },
+  { key:'Material Number SAP', label:'Material Number SAP', type:'text' },
+  { key:'Spare Part Digunakan', label:'Spare Part (catatan)', type:'text' },
+  { key:'Jam Mulai', label:'Jam Mulai', type:'time' },
+  { key:'Jam Selesai', label:'Jam Selesai', type:'time' },
+  { key:'Downtime (menit)', label:'Estimasi Pekerjaan (menit)', type:'number' },
+  { key:'Catatan Tambahan', label:'Catatan', type:'textarea' }
+];
+function renderEntryEditForm(e){
+  const holder = $('#entry-view-mode');
+  if(!holder) return;
+  const fieldHtml = ENTRY_EDIT_FIELDS.map(f=>{
+    const raw = e[f.key] || '';
+    const val = f.toInput ? f.toInput(raw) : raw;
+    if(f.type === 'textarea'){
+      return `<div class="field"><label>${escapeHtml(f.label)}</label><textarea data-edit-field="${f.key}" rows="3">${escapeHtml(val)}</textarea></div>`;
+    }
+    if(f.type === 'select'){
+      const opts = f.options.map(o=>`<option value="${escapeHtml(o)}" ${String(val)===o?'selected':''}>${escapeHtml(o)}</option>`).join('');
+      return `<div class="field"><label>${escapeHtml(f.label)}</label><select data-edit-field="${f.key}">${opts}</select></div>`;
+    }
+    return `<div class="field"><label>${escapeHtml(f.label)}</label><input type="${f.type}" data-edit-field="${f.key}" value="${escapeHtml(val)}"></div>`;
+  }).join('');
+  holder.innerHTML = `
+    <div class="grid2">${fieldHtml}</div>
+    <div style="margin-top:16px;display:flex;gap:10px;">
+      <button class="btn btn-primary btn-sm" id="btn-save-entry-edit"><i class="ph-bold ph-floppy-disk"></i> Simpan Perubahan</button>
+      <button class="btn btn-ghost btn-sm" id="btn-cancel-entry-edit">Batal</button>
+    </div>
+  `;
+  $('#btn-cancel-entry-edit').addEventListener('click', ()=> openDetail(e['ID']));
+  $('#btn-save-entry-edit').addEventListener('click', ()=> saveEntryEdit(e['ID']));
+}
+async function saveEntryEdit(id){
+  const holder = $('#entry-view-mode');
+  const fieldEls = $$('[data-edit-field]', holder);
+  const entry = { ID: id };
+  const keyToPayload = {
+    'Tanggal':'tanggal', 'Waktu':'waktu', 'Shift':'shift', 'Grouping Pekerjaan':'groupingPekerjaan',
+    'Grouping Team':'groupingTeam', 'Nama Pelapor':'namaPelapor', 'Nomor Notifikasi Pekerjaan':'nomorNotifikasi',
+    'Kode Mesin':'kodeMesin', 'Nama Mesin':'namaMesin', 'Nama Unit':'namaUnit', 'Jenis Pekerjaan':'jenisPekerjaan',
+    'Prioritas':'prioritas', 'Status':'status', 'Deskripsi Masalah':'deskripsiMasalah', 'Tindakan Perbaikan':'tindakanPerbaikan',
+    'Nama Material':'namaMaterial', 'Material Number SAP':'materialNumberSAP', 'Spare Part Digunakan':'sparePart',
+    'Jam Mulai':'jamMulai', 'Jam Selesai':'jamSelesai', 'Downtime (menit)':'downtime', 'Catatan Tambahan':'catatan'
+  };
+  fieldEls.forEach(el=>{
+    const key = el.dataset.editField;
+    const val = el.value;
+    if(key === 'Personil Tambahan'){
+      const arr = val.split(',').map(s=>s.trim()).filter(Boolean);
+      entry.personilTambahan = arr;
+      entry.personilTambahanStr = arr.join(', ');
+      return;
+    }
+    const payloadKey = keyToPayload[key];
+    if(payloadKey) entry[payloadKey] = val;
+  });
+  if(!entry.tanggal || !entry.shift || !entry.namaPelapor || !entry.kodeMesin || !entry.namaMesin || !entry.jenisPekerjaan || !entry.prioritas || !entry.deskripsiMasalah || !entry.tindakanPerbaikan || !entry.status){
+    toast('Lengkapi semua field wajib (Tanggal, Shift, Nama Pelapor, Mesin, Jenis Pekerjaan, Prioritas, Status, Deskripsi Masalah, Tindakan Perbaikan).', true);
+    return;
+  }
+  const btn = $('#btn-save-entry-edit');
+  btn.disabled = true; btn.textContent = 'Menyimpan...';
+  try{
+    await apiPost({ action:'updateEntry', entry });
+    toast('Perubahan Logbook tersimpan ✓');
+    closeModal();
+    await loadAll();
+    refreshCurrentView();
+  }catch(err){
+    toast('Gagal menyimpan perubahan: ' + err.message, true);
+    btn.disabled = false; btn.textContent = 'Simpan Perubahan';
+  }
 }
 function closeModal(){ $('#modal-bg').classList.remove('active'); COPILOT_LAST_MACHINE = null; }
 $('#modal-bg').addEventListener('click', (ev)=>{ if(ev.target.id==='modal-bg') closeModal(); });
@@ -16360,6 +16458,13 @@ function initFormWizard(formSel, toggleSel, labelSel, navSel){
   };
 }
 initFormWizard('#form-entry', '#form-wizard-toggle', '#form-wizard-toggle-label', '#wizard-nav');
+// [FIX WIZARD] Toggle "Mode Wizard" di halaman Soft Skill Assessment & Hard Skill Assessment
+// sudah ada di HTML (#pi-ss-wizard-toggle / #pi-hs-wizard-toggle) tapi sebelumnya TIDAK PERNAH
+// disambungkan ke initFormWizard() -- hanya #form-entry (Input Logbook) yang diaktifkan.
+// Akibatnya toggle di dua halaman itu tidak melakukan apa-apa saat diklik.
+// initFormWizard tidak mensyaratkan elemen <form> asli, jadi aman dipakai pada <div class="card">.
+initFormWizard('#pi-ss-form-card', '#pi-ss-wizard-toggle', '#pi-ss-wizard-toggle-label', '#pi-ss-wizard-nav');
+initFormWizard('#pi-hs-form-card', '#pi-hs-wizard-toggle', '#pi-hs-wizard-toggle-label', '#pi-hs-wizard-nav');
 
 /* ---------------- FORM SUBMIT ---------------- */
 $('#form-entry').addEventListener('submit', async (ev)=>{
@@ -17978,7 +18083,7 @@ function patrolStatusColor(key){
 }
 
 let PATROL_ACTIVE_TAB = 'mulai';
-let PATROL_STATE = { kodeMesin:'', namaMesin:'', checklist:{}, findings:[] };
+let PATROL_STATE = { id:null, kodeMesin:'', namaMesin:'', checklist:{}, findings:[] };
 let PATROL_FINDING_FILES = []; // {name, mimeType, base64, _localUrl, _isVideo} — sama seperti PENDING_FILES di Input Logbook
 
 function Utilities_todayStr(){
@@ -17991,7 +18096,7 @@ function Utilities_nowTimeStr(){
 }
 
 function patrolResetWizard(){
-  PATROL_STATE = { kodeMesin:'', namaMesin:'', checklist:{}, findings:[] };
+  PATROL_STATE = { id:null, kodeMesin:'', namaMesin:'', checklist:{}, findings:[] };
   PATROL_FINDING_FILES = [];
   $('#patrol-step-1').style.display = '';
   $('#patrol-step-2').style.display = 'none';
@@ -18287,9 +18392,15 @@ $('#btn-patrol-save').addEventListener('click', async ()=>{
   const c = patrolCounts();
   const score = patrolScore(c);
   const severity = patrolOverallSeverity(c);
+  const isEditingExisting = !!PATROL_STATE.id;
   const report = {
-    id: 'PM-' + Date.now(),
-    ts: Date.now(),
+    // [FITUR EDIT PATROL] Kalau sedang mengedit sesi lama (PATROL_STATE.id sudah
+    // diisi lewat patrolLoadSessionForEdit), pakai ID yang sama supaya backend
+    // (savePredictiveReport_) meng-update baris yang sudah ada, bukan menambah
+    // baris baru. ts (timestamp) juga dipertahankan dari sesi lama supaya urutan
+    // riwayat & filter tanggal tidak berubah hanya karena diedit.
+    id: PATROL_STATE.id || ('PM-' + Date.now()),
+    ts: isEditingExisting ? (PATROL_STATE.ts || Date.now()) : Date.now(),
     tanggal,
     waktuPatrol: waktu,
     shift,
@@ -18314,9 +18425,10 @@ $('#btn-patrol-save').addEventListener('click', async ()=>{
   btn.disabled = true;
   const res = await persistPmReport(report, filesForBackend);
   btn.disabled = false;
+  const verb = isEditingExisting ? 'diperbarui' : 'tersimpan';
   toast(res.synced
-    ? `Patrol "${report.namaMesin}" tersimpan (Score ${score}/100). Dashboard diperbarui.`
-    : `Patrol "${report.namaMesin}" tersimpan lokal (Score ${score}/100, belum tersambung Google Sheet).`);
+    ? `Patrol "${report.namaMesin}" ${verb} (Score ${score}/100). Dashboard diperbarui.`
+    : `Patrol "${report.namaMesin}" ${verb} lokal (Score ${score}/100, belum tersambung Google Sheet).`);
   patrolResetWizard();
   if($('#view-dashboard').classList.contains('active')) renderDashboardView();
 });
@@ -18511,7 +18623,10 @@ function openPatrolSessionDetail(reportId){
         <span class="badge" style="background:var(--panel-2);border:1px solid var(--line);">${escapeHtml(r.kodeMesin||'-')}</span>
         <h2 style="font-family:var(--font-display);margin:8px 0 0 0;">${escapeHtml(r.namaMesin||'-')}</h2>
       </div>
-      <button class="modal-close" id="btn-close-modal">✕</button>
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-sm" id="btn-edit-patrol-session"><i class="ph-bold ph-pencil-simple"></i> Edit</button>
+        <button class="modal-close" id="btn-close-modal">✕</button>
+      </div>
     </div>
     <div class="detail-row"><div class="k">Tanggal</div><div class="v">${escapeHtml(r.tanggal||'-')} · ${escapeHtml(r.waktuPatrol||'-')}</div></div>
     <div class="detail-row"><div class="k">Shift</div><div class="v">${escapeHtml(r.shift||'-')}</div></div>
@@ -18526,6 +18641,49 @@ function openPatrolSessionDetail(reportId){
   $('#modal-bg').classList.add('active');
   bindAttachGridClicks($('#modal-content'));
   $('#btn-close-modal').addEventListener('click', closeModal);
+  $('#btn-edit-patrol-session').addEventListener('click', ()=> patrolLoadSessionForEdit(r.id));
+}
+
+// [FITUR EDIT PATROL] Muat ulang sesi Patrol yang sudah tersimpan ke Tab "Mulai
+// Patrol" (langsung ke Langkah 2, mesin sudah terpilih) supaya semua checklist &
+// temuan yang sudah ada tampil apa adanya dan bisa diubah. Saat tombol "Simpan
+// Patrol" ditekan, ID sesi lama dipakai lagi (lihat PATROL_STATE.id di atas)
+// sehingga baris yang sudah ada di Google Sheets di-UPDATE, bukan ditambah baru.
+function patrolLoadSessionForEdit(reportId){
+  const r = (PM_REPORTS||[]).find(x=>x.id===reportId);
+  if(!r){ toast('Data riwayat patrol tidak ditemukan.', true); return; }
+  closeModal();
+  PATROL_STATE = {
+    id: r.id,
+    ts: r.ts,
+    kodeMesin: r.kodeMesin || '',
+    namaMesin: r.namaMesin || '',
+    checklist: JSON.parse(JSON.stringify(r.checklist || {})),
+    findings: JSON.parse(JSON.stringify(r.findings || []))
+  };
+  PATROL_FINDING_FILES = [];
+  // Pindah ke tab "Mulai Patrol"
+  PATROL_ACTIVE_TAB = 'mulai';
+  $$('#patrol-tabs .machine-chip').forEach(b=> b.classList.toggle('active', b.dataset.ptab==='mulai'));
+  $$('.patrol-panel').forEach(p=> p.style.display = 'none');
+  $('#patrol-panel-mulai').style.display = '';
+  // Isi field info umum dari sesi lama
+  $('#patrol-tanggal').value = r.tanggal || Utilities_todayStr();
+  $('#patrol-waktu').value = r.waktuPatrol || Utilities_nowTimeStr();
+  if($('#patrol-shift')) $('#patrol-shift').value = r.shift || '';
+  if($('#patrol-grouping-team')) $('#patrol-grouping-team').value = r.groupingTeam || '';
+  if($('#patrol-nama-pelapor')) $('#patrol-nama-pelapor').value = r.petugas || '';
+  // Langsung ke Langkah 2 (checklist), mesin sudah terkunci sesuai sesi lama
+  $('#patrol-step-1').style.display = 'none';
+  $('#patrol-step-2').style.display = '';
+  $('#patrol-step-3').style.display = 'none';
+  $('#patrol-step2-mesin').textContent = PATROL_STATE.namaMesin + ' (' + (PATROL_STATE.kodeMesin||'-') + ')';
+  renderPatrolChecklist();
+  // Render ulang daftar temuan yang sudah ada di sesi ini supaya ikut ditampilkan
+  // & bisa ditambah/dilihat lagi lewat renderPatrolFindingsInputList (Langkah 3).
+  if(typeof renderPatrolFindingsInputList === 'function') renderPatrolFindingsInputList();
+  toast(`Mengedit sesi patrol "${PATROL_STATE.namaMesin}". Ubah checklist/temuan lalu tekan "Simpan Patrol".`);
+  $('#patrol-step-2').scrollIntoView({behavior:'smooth', block:'start'});
 }
 
 /* ---- Tab 4: Statistik ---- */
